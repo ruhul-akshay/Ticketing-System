@@ -65,6 +65,10 @@ app.use(morgan('dev'));
 app.use('/uploads', express.static(uploadsDir));
 
 // ======================= HEALTH CHECK =======================
+app.get('/', (req, res) => {
+  res.status(200).send('OK');
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
