@@ -20,6 +20,21 @@ export const uploadsDir = path.join(rootDir, 'uploads');
 
 const app = express();
 
+// ======================= CORS =======================
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Origin, X-Requested-With, Content-Type, Accept, Authorization, *');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
 // ======================= TRUST PROXY =======================
 app.set('trust proxy', 1);
 
@@ -29,34 +44,6 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
-
-// ======================= CORS =======================
-app.use((req, res, next) => {
-  const allowedOrigins = [
-    'http://ticketing.akshay.com',
-    'https://ticketing.akshay.com',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-  
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', 'http://ticketing.akshay.com');
-  }
-  
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, *');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
-});
 
 // ======================= RATE LIMIT =======================
 const limiter = rateLimit({
