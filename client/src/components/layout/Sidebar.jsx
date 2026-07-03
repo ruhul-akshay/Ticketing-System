@@ -4,9 +4,9 @@ import { motion } from 'framer-motion';
 import { 
   LayoutDashboard, PlusCircle, Ticket, Star, 
   ClipboardList, BookOpen, Users, Shield, 
-  Building2, Briefcase, Activity, Radio
+  Building2, Briefcase, Activity, Radio, GitFork
 } from 'lucide-react';
-import { useAuthStore } from '../../core/store/useAuthStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import logo from '../../assets/logo.png';
 
 const Sidebar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
@@ -17,27 +17,29 @@ const Sidebar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
     { to: '/', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/create-ticket', icon: <PlusCircle size={20} />, label: 'Create Ticket' },
     { to: '/my-tickets', icon: <Ticket size={20} />, label: 'My Tickets' },
+    { to: '/my-team', icon: <Users size={20} />, label: 'My Team' },
     { to: '/reviews', icon: <Star size={20} />, label: 'Reviews' },
   ];
 
-  const adminLinks = [
-    { to: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-    { to: '/admin/tickets', icon: <ClipboardList size={20} />, label: 'Assigned Tickets' },
-    { to: '/admin/solutions', icon: <BookOpen size={20} />, label: 'Solutions' },
+  const consultantLinks = [
+    { to: '/consultant', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+    { to: '/consultant/tickets', icon: <ClipboardList size={20} />, label: 'Assigned Tickets' },
+    { to: '/consultant/solutions', icon: <BookOpen size={20} />, label: 'Solutions' },
   ];
 
   const superAdminLinks = [
     { to: '/', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/super-admin/tickets', icon: <Ticket size={20} />, label: 'Tickets' },
+    { to: '/super-admin/pre-assignment-rules', icon: <GitFork size={20} />, label: 'Routing Rules' },
     { to: '/super-admin/notifications', icon: <Radio size={20} />, label: 'Broadcasts' },
     { to: '/super-admin/solutions', icon: <BookOpen size={20} />, label: 'Solutions Directory' },
-    { to: '/super-admin/users', icon: <Users size={20} />, label: 'Users' },
-    { to: '/super-admin/admins', icon: <Shield size={20} />, label: 'Admins' },
+    { to: '/super-admin/client-users', icon: <Users size={20} />, label: 'Client Users' },
+    { to: '/super-admin/consultants', icon: <Shield size={20} />, label: 'Consultants' },
     { to: '/super-admin/departments', icon: <Building2 size={20} />, label: 'Departments' },
-    { to: '/super-admin/companies', icon: <Briefcase size={20} />, label: 'Companies' },
+    { to: '/super-admin/clients', icon: <Briefcase size={20} />, label: 'Clients' },
   ];
 
-  const links = role === 'Super Admin' ? superAdminLinks : role === 'Admin' ? adminLinks : userLinks;
+  const links = role === 'Super Admin' ? superAdminLinks : role === 'Consultant' ? consultantLinks : userLinks;
 
   return (
     <motion.aside 

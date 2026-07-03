@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio } from 'lucide-react';
-import api from '../../core/api/mockAxios';
-import { useTicketStore } from '../../core/store/useTicketStore';
-import { useAuthStore } from '../../core/store/useAuthStore';
+import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown } from 'lucide-react';
+import api from '../../api/mockAxios';
+import { useTicketStore } from '../../store/useTicketStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useConsultantStore } from '../../store/useConsultantStore';
 
 const getStatusColor = (status) => {
   switch (status) {
     case 'Open': return 'bg-red-500/20 text-red-500 border-red-500/30';
     case 'Resolved': return 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30';
+    case 'On Hold': return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
+    case 'Cancelled': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
   }
 };
@@ -22,21 +25,167 @@ const getPriorityColor = (priority) => {
   }
 };
 
-export default function TicketViewerModal({ ticket, isOpen, onClose }) {
-  if (!isOpen || !ticket) return null;
+export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClose }) {
+  const liveTicket = useTicketStore((state) => 
+    state.tickets.find((t) => t.id === (initialTicket?.id || initialTicket?.original?._id)) || initialTicket
+  );
 
+  const { fetchTickets } = useTicketStore();
   const { user } = useAuthStore();
-  const isOwner = (user?.role === 'User' || user?.role === 'user') && (ticket.creatorId === user?.id || ticket.creatorId === user?._id);
-  const hasNoFeedback = !ticket.original?.feedback?.rating;
-  const isResolved = ticket.status === 'Resolved';
 
   // Auto-open feedback form for resolved tickets without a rating (for the ticket owner)
-  const [showFeedbackForm, setShowFeedbackForm] = React.useState(isOwner && isResolved && hasNoFeedback);
+  const [showFeedbackForm, setShowFeedbackForm] = React.useState(false);
   const [rating, setRating] = React.useState(0);
   const [hoverRating, setHoverRating] = React.useState(0);
   const [comment, setComment] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const { fetchTickets } = useTicketStore();
+
+  const { consultants, fetchConsultants } = useConsultantStore();
+  const { assignTicket, forwardTicket, deleteTicket, updateTicketStatus } = useTicketStore();
+  
+  const [selectedConsultantId, setSelectedConsultantId] = React.useState('');
+  const [assignRemarks, setAssignRemarks] = React.useState('');
+  const [isAssigning, setIsAssigning] = React.useState(false);
+  const [ccConsultantIds, setCcConsultantIds] = React.useState([]);
+  const [assignCcDropdownOpen, setAssignCcDropdownOpen] = React.useState(false);
+
+  const [selectedForwardConsultantId, setSelectedForwardConsultantId] = React.useState('');
+  const [forwardRemarks, setForwardRemarks] = React.useState('');
+  const [isForwarding, setIsForwarding] = React.useState(false);
+  const [forwardCcConsultantIds, setForwardCcConsultantIds] = React.useState([]);
+  const [forwardCcDropdownOpen, setForwardCcDropdownOpen] = React.useState(false);
+
+  const [activeConsoleTab, setActiveConsoleTab] = React.useState('assign'); // 'assign' | 'forward' | 'status' | 'worklog'
+  const [solutionText, setSolutionText] = React.useState('');
+  const [workLogHours, setWorkLogHours] = React.useState('');
+  const [workLogDate, setWorkLogDate] = React.useState(new Date().toISOString().split('T')[0]);
+  const [statusInput, setStatusInput] = React.useState('');
+
+  // Conversation input state
+  const [replyText, setReplyText] = React.useState('');
+  const [replyFiles, setReplyFiles] = React.useState([]);
+  const replyFileRef = useRef(null);
+
+  const ticket = liveTicket || {};
+
+  const handleDownloadTicketDetails = () => {
+    const clientName = ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal';
+    const reportText = `==================================================
+TICKET DETAILS REPORT
+==================================================
+Generated on: ${new Date().toLocaleString()}
+
+1. BASIC DETAILS
+--------------------------------------------------
+Ticket Number:  ${ticket.ticketNumber || ticket.id || '—'}
+Title:          ${ticket.title || '—'}
+Status:         ${ticket.status || '—'}
+Priority:       ${ticket.priority || '—'}
+Category:       ${ticket.category || '—'}
+Reason:         ${ticket.reason || '—'}
+Created At:     ${ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : '—'}
+Updated At:     ${ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString() : '—'}
+
+2. CREATOR & ASSIGNEE DETAILS
+--------------------------------------------------
+Submitted By:   ${ticket.createdBy?.name || ticket.createdBy || '—'}
+Email:          ${ticket.createdBy?.email || '—'}
+Client:         ${clientName}
+Department:     ${ticket.department?.name || ticket.department || '—'}
+Assigned To:    ${ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}
+Email:          ${ticket.assignedTo?.email || ticket.original?.assignedTo?.email || '—'}
+
+3. ISSUE DESCRIPTION
+--------------------------------------------------
+${ticket.description || 'No description provided.'}
+
+4. FINAL SOLUTION / RESOLUTION
+--------------------------------------------------
+${ticket.original?.solution || ticket.solution || 'No solution recorded yet.'}
+
+5. REMARKS / CONVERSATION HISTORY
+--------------------------------------------------
+${(ticket.original?.remarks || []).map((remark, idx) => {
+  const sender = remark.addedBy?.name || 'System';
+  const role = remark.addedBy?.role || 'Staff';
+  const dateStr = remark.addedAt ? new Date(remark.addedAt).toLocaleString() : '—';
+  const text = remark.text || '';
+  const fileList = (remark.attachments || []).map(att => att.originalName || att.filename).join(', ');
+  const filesInfo = fileList ? `\nAttachments: ${fileList}` : '';
+  return `[${dateStr}] ${sender} (${role}):\n"${text}"${filesInfo}\n`;
+}).join('\n--------------------------------------------------\n') || 'No remarks recorded.'}
+
+6. ASSIGNMENT & ROUTING HISTORY
+--------------------------------------------------
+${(ticket.assignmentHistory || []).map((history, idx) => {
+  const dateStr = history.actionDate ? new Date(history.actionDate).toLocaleString() : '—';
+  const action = history.action === 'initial_assignment' ? 'Auto Assign' : history.action === 'assign' ? 'Assign' : 'Forward';
+  const remarks = history.remarks ? `\nRemarks: "${history.remarks}"` : '';
+  if (history.action === 'initial_assignment') {
+    return `[${dateStr}] Auto Assigned to Super Admin: ${history.assignedTo?.name || 'Super Admin'}${remarks}`;
+  } else if (history.action === 'assign') {
+    return `[${dateStr}] Assigned by ${history.assignedBy?.name || 'Super Admin'} to ${history.assignedTo?.name || 'Consultant'}${remarks}`;
+  } else {
+    return `[${dateStr}] Forwarded by ${history.forwardedBy?.name || 'Consultant'} to ${history.forwardedTo?.name || 'Consultant'}${remarks}`;
+  }
+}).join('\n--------------------------------------------------\n') || 'No assignment history recorded.'}
+==================================================`;
+
+    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Ticket_${ticket.ticketNumber || 'Details'}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  const userRoleLower = user?.role?.toLowerCase()?.replace(/\s+/g, '') || '';
+  const isCurrentSuperAdmin = userRoleLower === 'superadmin';
+  const isCurrentConsultant = userRoleLower === 'consultant' || userRoleLower === 'admin' || isCurrentSuperAdmin;
+  const isOwner = ticket.creatorId && user && (user.role === 'User' || user.role === 'user' || userRoleLower === 'user' || user.role === 'Client User' || userRoleLower === 'clientuser') && (ticket.creatorId === user.id || ticket.creatorId === user._id);
+  const hasNoFeedback = !ticket.original?.feedback?.rating;
+  const isResolved = ticket.status === 'Resolved';
+  const rawTicketId = ticket.original?._id || ticket.id;
+
+  const grandTotalHours = React.useMemo(() => {
+    const logs = ticket.workLogs || ticket.original?.workLogs || [];
+    return logs.reduce((sum, log) => sum + (Number(log.hours) || 0), 0);
+  }, [ticket.workLogs, ticket.original?.workLogs]);
+
+  React.useEffect(() => {
+    if (!isOpen || !liveTicket) return;
+
+    const interval = setInterval(() => {
+      fetchTickets().catch(err => console.error('Error polling tickets:', err));
+    }, 4000); // Poll every 4 seconds
+
+    return () => clearInterval(interval);
+  }, [isOpen, liveTicket?.id, fetchTickets]);
+
+  // Reset/sync state when the ticket changes or modal opens
+  React.useEffect(() => {
+    if (isOpen && liveTicket) {
+      const liveIsOwner = (user?.role === 'User' || user?.role === 'user' || user?.role === 'Client User' || user?.role?.toLowerCase() === 'client user' || user?.role?.toLowerCase() === 'clientuser') && (liveTicket.creatorId === user?.id || liveTicket.creatorId === user?._id);
+      const liveHasNoFeedback = !liveTicket.original?.feedback?.rating;
+      const liveIsResolved = liveTicket.status === 'Resolved';
+      setShowFeedbackForm(!!(liveIsOwner && liveIsResolved && liveHasNoFeedback));
+      setRating(0);
+      setHoverRating(0);
+      setComment('');
+      setIsSubmitting(false);
+      setReplyText('');
+      setReplyFiles([]);
+      setStatusInput(liveTicket.status || 'Open');
+      setSolutionText(liveTicket.original?.solution || '');
+      setActiveConsoleTab(isCurrentSuperAdmin ? 'assign' : 'forward');
+
+      if (isCurrentConsultant) {
+        fetchConsultants().catch(err => console.error('Error fetching consultants:', err));
+      }
+    }
+  }, [liveTicket?.id, isOpen, user]);
 
   const handleSubmitFeedback = async () => {
     if (rating === 0) return alert('Please select a rating');
@@ -60,13 +209,74 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
     }
   };
 
-  const rawTicketId = ticket.original?._id || ticket.id;
+  const handleSendRemark = async () => {
+    const text = replyText.trim();
+    const files = replyFiles;
+    if (!text && files.length === 0) return;
+
+    setIsSubmitting(true);
+    try {
+      await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, null, [], [], files);
+      setReplyText('');
+      setReplyFiles([]);
+      if (replyFileRef.current) replyFileRef.current.value = '';
+      await fetchTickets();
+    } catch (err) {
+      console.error('Send remark error:', err);
+      alert(err?.response?.data?.message || 'Failed to send message. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateLifecycleStatus = async () => {
+    if (!statusInput) return alert('Please select a status.');
+    setIsSubmitting(true);
+    try {
+      await updateTicketStatus(ticket.id, statusInput, null, solutionText || null, []);
+      alert('Ticket status updated successfully!');
+      await fetchTickets();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update status.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddWorkLogHours = async () => {
+    const hours = Number(workLogHours);
+    if (isNaN(hours) || hours <= 0) return alert('Please enter a valid number of hours.');
+    setIsSubmitting(true);
+    try {
+      const logs = [{ date: workLogDate, hours }];
+      await updateTicketStatus(ticket.id, ticket.status, null, null, logs);
+      setWorkLogHours('');
+      alert('Effort hours logged successfully!');
+      await fetchTickets();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to log effort hours.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteTicket = async () => {
+    if (window.confirm('WARNING: Are you sure you want to completely erase this ticket from existence? This action is irreversible.')) {
+      try {
+        await deleteTicket(ticket.id);
+        alert('Ticket deleted successfully.');
+        onClose();
+      } catch (err) {
+        alert(err.response?.data?.message || 'Failed to delete ticket.');
+      }
+    }
+  };
 
   const handleDownloadAttachment = async (e, ticketId, attachmentId, filename) => {
     e.stopPropagation();
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
       const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
       const response = await fetch(`${baseUrl}/tickets/${ticketId}/attachment/${attachmentId}`, {
         headers: {
@@ -94,7 +304,8 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 font-sans">
+      {(isOpen && initialTicket && liveTicket) ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 font-sans">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -123,12 +334,38 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
               </div>
               <h2 className="text-2xl font-black text-white tracking-tight leading-tight pr-8">{ticket.title}</h2>
             </div>
-            <button 
-              onClick={onClose} 
-              className="p-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-full transition-colors absolute right-6 top-6 border border-white/5"
-            >
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-3 absolute right-6 top-6">
+              {isCurrentConsultant && ticket.status !== 'Resolved' && (
+                <button 
+                  onClick={() => {
+                    setActiveConsoleTab('forward');
+                    setTimeout(() => {
+                      const bodyEl = document.querySelector('.overflow-y-auto.relative.scroll-smooth');
+                      if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+                    }, 50);
+                  }} 
+                  className="p-2 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                  title="Forward Ticket"
+                >
+                  <Send size={13} />
+                  <span className="hidden sm:inline">Forward</span>
+                </button>
+              )}
+              <button 
+                onClick={handleDownloadTicketDetails}
+                className="p-2 bg-white/5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                title="Download Ticket Details"
+              >
+                <Download size={13} />
+                <span className="hidden sm:inline">Download</span>
+              </button>
+              <button 
+                onClick={onClose} 
+                className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-full transition-colors border border-white/5 flex items-center justify-center"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -136,10 +373,26 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-blue-600/5 blur-[100px] pointer-events-none" />
             
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 relative z-10">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8 relative z-10">
               <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><AlertCircle size={13} /> Priority</span>
                 <span className={`text-[14px] font-black tracking-wide uppercase ${getPriorityColor(ticket.priority)}`}>{ticket.priority}</span>
+              </div>
+              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={13} className="text-blue-400" /> Client</span>
+                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full" title={ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal'}>
+                  {ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal'}
+                </span>
+              </div>
+              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><User size={13} className="text-purple-400" /> Assigned To</span>
+                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full" title={ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}>
+                  {ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}
+                </span>
+              </div>
+              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-emerald-400" /> Effort Hours</span>
+                <span className="text-[14px] font-black text-emerald-400 tracking-wide">{grandTotalHours.toFixed(1)} hrs</span>
               </div>
               <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={13} /> Dept</span>
@@ -149,10 +402,26 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Tag size={13} /> Category</span>
                 <span className="text-[14px] font-bold text-white tracking-wide truncate w-full">{ticket.original?.category || 'General'}</span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
+              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner col-span-2">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} /> Created</span>
-                <span className="text-[14px] font-bold text-white tracking-wide">{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                <span className="text-[13px] font-bold text-white tracking-wide">
+                  {new Date(ticket.createdAt).toLocaleDateString()} {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
               </div>
+              {isResolved && (
+                <div className="bg-[#1d2633]/50 border border-emerald-500/20 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner col-span-2 sm:col-span-1">
+                  <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1.5"><CheckCircle size={13} /> Solved</span>
+                  <span className="text-[13px] font-bold text-emerald-400 tracking-wide">
+                    {ticket.original?.solvedAt || ticket.original?.actualResolutionDate ? (
+                      <>
+                        {new Date(ticket.original.solvedAt || ticket.original.actualResolutionDate).toLocaleDateString()}
+                      </>
+                    ) : (
+                      'N/A'
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Description */}
@@ -196,7 +465,7 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
             {/* Admin Attachments */}
             {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
               <div className="relative z-10 mb-8">
-                <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-3">Admin Attachments</h3>
+                <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-3">Consultant Attachments</h3>
                 <div className="flex flex-col gap-3">
                   {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file) => (
                     <div key={file._id} className="bg-[#1d2633] border border-emerald-500/10 p-4 rounded-xl flex items-center justify-between shadow-inner">
@@ -209,7 +478,7 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
                       <button 
                         onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
                         className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 shrink-0"
-                        title="Download Admin Attachment"
+                        title="Download Consultant Attachment"
                       >
                         <Download size={16} />
                       </button>
@@ -259,6 +528,429 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
               </div>
             )}
 
+            {/* Assignment & Forwarding History */}
+            <div className="relative z-10 mb-8 bg-[#1e293b]/30 p-6 rounded-2xl border border-white/5 shadow-inner">
+              <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Clock size={14} className="text-blue-400" /> Assignment & Forwarding History
+              </h3>
+              {(!ticket.assignmentHistory || ticket.assignmentHistory.length === 0) ? (
+                <p className="text-[13px] text-slate-500 italic">No assignment history logged.</p>
+              ) : (
+                <div className="relative border-l border-white/10 pl-6 ml-2.5 space-y-6">
+                  {ticket.assignmentHistory.map((item, index) => {
+                    const isInitial = item.action === 'initial_assignment';
+                    const isAssign = item.action === 'assign';
+                    const isForward = item.action === 'forward';
+
+                    return (
+                      <div key={index} className="relative">
+                        {/* Dot */}
+                        <div className={`absolute -left-[31px] top-1.5 w-3 h-3 rounded-full border-2 ${
+                          isInitial ? 'bg-blue-500 border-[#111620]' : isAssign ? 'bg-purple-500 border-[#111620]' : 'bg-amber-500 border-[#111620]'
+                        }`} />
+                        
+                        <div className="flex flex-col gap-1">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-slate-300">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                              isInitial ? 'bg-blue-500/10 text-blue-400' : isAssign ? 'bg-purple-500/10 text-purple-400' : 'bg-amber-500/10 text-amber-400'
+                            }`}>
+                              {isInitial ? 'Auto Assign' : isAssign ? 'Assign' : 'Forward'}
+                            </span>
+                            <span className="font-bold text-white">
+                              {isInitial ? (
+                                `Assigned to Super Admin: ${item.assignedTo?.name || 'Super Admin'}`
+                              ) : isAssign ? (
+                                `${item.assignedBy?.name || 'Super Admin'} assigned to ${item.assignedTo?.name || 'Consultant'}`
+                              ) : (
+                                `${item.forwardedBy?.name || 'Consultant'} forwarded to ${item.forwardedTo?.name || 'Consultant'}`
+                              )}
+                            </span>
+                          </div>
+                          
+                          {item.remarks && (
+                            <p className="text-[12px] text-slate-400 font-medium italic mt-1 bg-black/20 p-2.5 rounded-xl border border-white/5">
+                              "{item.remarks}"
+                            </p>
+                          )}
+                          
+                          <span className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase mt-1">
+                            {new Date(item.actionDate).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Super Admin / Consultant Ticket Operations Console */}
+            {isCurrentConsultant && (
+              <div className="relative z-10 mb-8 bg-[#181f2b]/95 p-6 rounded-[2rem] border border-blue-500/20 shadow-xl space-y-6">
+                <h3 className="text-[14px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 border-b border-white/5 pb-3">
+                  <Shield size={16} /> {isCurrentSuperAdmin ? 'Super Admin Control Console' : 'Consultant Operations Console'}
+                </h3>
+                
+                {/* Tab controls */}
+                <div className="flex flex-wrap gap-2 bg-[#111620] p-1.5 rounded-2xl border border-white/5">
+                  {isCurrentSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveConsoleTab('assign')}
+                      className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'assign' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                    >
+                      <User size={14} /> Assign
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsoleTab('forward')}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'forward' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                  >
+                    <Send size={14} /> Forward
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsoleTab('status')}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'status' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                  >
+                    <Settings size={14} /> Status
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsoleTab('worklog')}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'worklog' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                  >
+                    <Clock size={14} /> Log Hours
+                  </button>
+                  {isCurrentSuperAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteTicket}
+                      className="py-2.5 px-4 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all bg-red-600/10 hover:bg-red-600 text-red-400 hover:text-white flex items-center justify-center gap-2"
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  )}
+                </div>
+
+                {/* Tab content panel */}
+                <div className="bg-[#111620] p-5 rounded-2xl border border-white/5 min-h-[180px] flex flex-col justify-between">
+                  {activeConsoleTab === 'assign' && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span> Manual Assignment
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Assign or update the primary consultant key for this ticket scope.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Select Consultant</label>
+                          <select
+                            value={selectedConsultantId}
+                            onChange={(e) => setSelectedConsultantId(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-purple-500/50 shadow-inner cursor-pointer w-full"
+                          >
+                            <option value="">-- Choose Consultant --</option>
+                            {consultants.filter(c => c.status === 'active').map(consultant => (
+                              <option key={consultant._id || consultant.id} value={consultant._id || consultant.id}>
+                                {consultant.name} ({consultant.email})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 relative">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
+                          <div 
+                            onClick={() => setAssignCcDropdownOpen(!assignCcDropdownOpen)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none"
+                          >
+                            <span className="truncate">
+                              {ccConsultantIds.length === 0 
+                                ? '-- Choose CCs --' 
+                                : `${ccConsultantIds.length} Selected`}
+                            </span>
+                            <ChevronDown size={14} className={`text-slate-400 transition-transform ${assignCcDropdownOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                          {assignCcDropdownOpen && (
+                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-[#1a202c] border border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
+                              {consultants.filter(c => c.status === 'active' && String(c._id || c.id) !== String(selectedConsultantId)).map(c => {
+                                const isChecked = ccConsultantIds.includes(c._id || c.id);
+                                return (
+                                  <label 
+                                    key={c._id || c.id} 
+                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 cursor-pointer select-none text-[11px]"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        setCcConsultantIds(prev => prev.includes(c._id || c.id) ? prev.filter(id => id !== (c._id || c.id)) : [...prev, (c._id || c.id)]);
+                                      }}
+                                      className="rounded text-purple-600 focus:ring-0 cursor-pointer"
+                                    />
+                                    <span className="truncate text-slate-200">{c.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Directives</label>
+                          <textarea
+                            placeholder="Add assignment instructions..."
+                            value={assignRemarks}
+                            onChange={(e) => setAssignRemarks(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-purple-500/50 min-h-[50px] resize-none w-full"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!selectedConsultantId) return alert('Please select a consultant first.');
+                            setIsAssigning(true);
+                            try {
+                              await assignTicket(rawTicketId, selectedConsultantId, assignRemarks, ccConsultantIds);
+                              setSelectedConsultantId('');
+                              setAssignRemarks('');
+                              setCcConsultantIds([]);
+                              setAssignCcDropdownOpen(false);
+                              alert('Ticket assigned successfully!');
+                            } catch (err) {
+                              alert(err.response?.data?.message || 'Failed to assign ticket.');
+                            } finally {
+                              setIsAssigning(false);
+                            }
+                          }}
+                          disabled={isAssigning || !selectedConsultantId}
+                          className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-purple-500/10 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {isAssigning ? 'Assigning...' : 'Confirm Assignment'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeConsoleTab === 'forward' && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Forward Routing
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Forward this ticket payload to another consultant node dynamically.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Target Consultant Node</label>
+                          <select
+                            value={selectedForwardConsultantId}
+                            onChange={(e) => setSelectedForwardConsultantId(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-amber-500/50 shadow-inner cursor-pointer w-full"
+                          >
+                            <option value="">-- Choose Consultant --</option>
+                            {consultants.filter(c => {
+                              const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
+                              return c.status === 'active' && String(c._id || c.id) !== String(assignedId);
+                            }).map(consultant => (
+                              <option key={consultant._id || consultant.id} value={consultant._id || consultant.id}>
+                                {consultant.name} ({consultant.email})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 relative">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
+                          <div 
+                            onClick={() => setForwardCcDropdownOpen(!forwardCcDropdownOpen)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none"
+                          >
+                            <span className="truncate">
+                              {forwardCcConsultantIds.length === 0 
+                                ? '-- Choose CCs --' 
+                                : `${forwardCcConsultantIds.length} Selected`}
+                            </span>
+                            <ChevronDown size={14} className={`text-slate-400 transition-transform ${forwardCcDropdownOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                          {forwardCcDropdownOpen && (
+                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-[#1a202c] border border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
+                              {consultants.filter(c => {
+                                const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
+                                return c.status === 'active' && 
+                                  String(c._id || c.id) !== String(assignedId) && 
+                                  String(c._id || c.id) !== String(selectedForwardConsultantId);
+                              }).map(c => {
+                                const isChecked = forwardCcConsultantIds.includes(c._id || c.id);
+                                return (
+                                  <label 
+                                    key={c._id || c.id} 
+                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 cursor-pointer select-none text-[11px]"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        setForwardCcConsultantIds(prev => prev.includes(c._id || c.id) ? prev.filter(id => id !== (c._id || c.id)) : [...prev, (c._id || c.id)]);
+                                      }}
+                                      className="rounded text-amber-600 focus:ring-0 cursor-pointer"
+                                    />
+                                    <span className="truncate text-slate-200">{c.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Reason</label>
+                          <textarea
+                            placeholder="Add forwarding details..."
+                            value={forwardRemarks}
+                            onChange={(e) => setForwardRemarks(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-amber-500/50 min-h-[50px] resize-none w-full"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!selectedForwardConsultantId) return alert('Please select a consultant first.');
+                            setIsForwarding(true);
+                            try {
+                              await forwardTicket(rawTicketId, selectedForwardConsultantId, forwardRemarks, forwardCcConsultantIds);
+                              setSelectedForwardConsultantId('');
+                              setForwardRemarks('');
+                              setForwardCcConsultantIds([]);
+                              setForwardCcDropdownOpen(false);
+                              alert('Ticket forwarded successfully!');
+                            } catch (err) {
+                              alert(err.response?.data?.message || 'Failed to forward ticket.');
+                            } finally {
+                              setIsForwarding(false);
+                            }
+                          }}
+                          disabled={isForwarding || !selectedForwardConsultantId}
+                          className="px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-xl text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/10 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {isForwarding ? 'Forwarding...' : 'Confirm Forward'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeConsoleTab === 'status' && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span> Lifecycle Status Control
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Override the ticket status index. Solutions are required for resolved status.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Select State Override</label>
+                          <select
+                            value={statusInput}
+                            onChange={(e) => setStatusInput(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer w-full"
+                          >
+                            <option value="Open">Open Protocol</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="Resolved">Resolution Complete</option>
+                          </select>
+                        </div>
+                        
+                        {statusInput === 'Resolved' && (
+                          <div className="flex flex-col gap-1.5 animate-in fade-in duration-300">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Resolution Solution *</label>
+                            <textarea
+                              placeholder="Describe the resolution steps taken..."
+                              value={solutionText}
+                              onChange={(e) => setSolutionText(e.target.value)}
+                              className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-blue-500/50 min-h-[50px] resize-none w-full"
+                              required
+                            />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={handleUpdateLifecycleStatus}
+                          disabled={isSubmitting || (statusInput === 'Resolved' && !solutionText.trim())}
+                          className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/10 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {isSubmitting ? 'Updating...' : 'Commit Status Override'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeConsoleTab === 'worklog' && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Log Support Effort
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Record work hours directly to accumulate on client's AMC contract balance.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Effort Time (Hours)</label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0.1"
+                            placeholder="e.g. 1.5, 2.0"
+                            value={workLogHours}
+                            onChange={(e) => setWorkLogHours(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-4 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full"
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Execution Date</label>
+                          <input
+                            type="date"
+                            value={workLogDate}
+                            onChange={(e) => setWorkLogDate(e.target.value)}
+                            className="bg-[#181f2b] border border-white/5 rounded-xl px-4 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={handleAddWorkLogHours}
+                          disabled={isSubmitting || !workLogHours}
+                          className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/10 disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {isSubmitting ? 'Logging...' : 'Commit Effort Hours'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="relative z-10 mb-8 bg-[#0a0f1a]/80 p-8 rounded-[3rem] border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden">
               {/* Mesh background for the conversation area */}
               <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
@@ -278,66 +970,88 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
                   </div>
                 ) : (
                   ticket.original.remarks.map((remark, index) => {
-                    const isAdmin = remark.addedBy?.role === 'admin' || remark.addedBy?.role === 'superadmin';
+                    const remarkRoleLower = remark.addedBy?.role?.toLowerCase()?.replace(/\s+/g, '') || '';
+                    const isAdmin = remarkRoleLower === 'consultant' || remarkRoleLower === 'admin' || remarkRoleLower === 'superadmin';
                     const senderName = remark.addedBy?.name || 'System';
                     const isMe = String(remark.addedBy?._id || remark.addedBy) === String(user?._id || user?.id);
                     
+                    const alignSelf = isMe ? 'justify-end' : 'justify-start';
+                    const itemsAlign = isMe ? 'items-end' : 'items-start';
+                    const flexDir = isMe ? 'flex-row-reverse' : 'flex-row';
+                    const roundedCorner = isMe ? 'rounded-tr-none' : 'rounded-tl-none';
+                    
                     return (
-                      <div key={index} className={`flex ${isAdmin ? 'justify-start' : 'justify-end'} w-full animate-in fade-in slide-in-from-bottom-6 duration-700`}>
-                        <div className={`max-w-[80%] flex flex-col ${isAdmin ? 'items-start' : 'items-end'}`}>
+                      <div key={index} className={`flex ${alignSelf} w-full animate-in fade-in slide-in-from-bottom-6 duration-500`}>
+                        <div className={`max-w-[85%] flex flex-col ${itemsAlign}`}>
                           {/* Chat Header */}
-                          <div className={`flex items-center gap-3 mb-2.5 px-3 ${isAdmin ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <div className={`w-8 h-8 rounded-2xl flex items-center justify-center text-[11px] font-black shadow-xl transition-transform hover:rotate-12 ${
+                          <div className={`flex items-center gap-3 mb-2 px-2.5 ${flexDir}`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-black shadow-lg transition-transform hover:rotate-12 select-none ${
                               isAdmin 
-                                ? 'bg-emerald-500 text-white ring-4 ring-emerald-500/10' 
-                                : 'bg-blue-600 text-white ring-4 ring-blue-600/10'
+                                ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-4 ring-emerald-500/10' 
+                                : 'bg-gradient-to-br from-red-500 to-[#ED1B2F] text-white ring-4 ring-red-500/10'
                             }`}>
                               {senderName[0].toUpperCase()}
                             </div>
-                            <div className={`flex flex-col ${isAdmin ? 'items-start' : 'items-end'}`}>
-                              <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
-                                {isMe ? 'Me' : isAdmin ? `${senderName} (Support)` : senderName}
-                              </span>
-                              <span className="text-[9px] text-slate-600 font-black tracking-widest">
-                                {new Date(remark.addedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            
+                            <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                              <div className={`flex items-center gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                <span className="text-[11px] font-black text-slate-350">
+                                  {isMe ? 'Me' : senderName}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider ${
+                                  isAdmin 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                    : 'bg-red-500/10 text-[#ED1B2F] border border-red-500/20'
+                                }`}>
+                                  {isAdmin ? 'Support' : 'Client'}
+                                </span>
+                              </div>
+                              <span className="text-[9px] text-slate-500 font-semibold mt-0.5">
+                                {new Date(remark.addedAt).toLocaleDateString()} {new Date(remark.addedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
                               </span>
                             </div>
                           </div>
 
                           {/* Message Bubble */}
-                          <div className={`group relative p-6 rounded-[2.5rem] shadow-2xl border transition-all duration-500 hover:scale-[1.01] ${
-                            isAdmin 
-                              ? 'bg-[#161b26] border-white/10 text-slate-200 rounded-tl-none shadow-black/60' 
-                              : 'bg-blue-600 border-blue-400/30 text-white rounded-tr-none shadow-blue-900/40'
+                          <div className={`group relative p-5 rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl/20 ${roundedCorner} ${
+                            isMe
+                              ? isAdmin
+                                ? 'bg-gradient-to-br from-emerald-600/90 to-teal-700/90 border-emerald-500/30 text-white shadow-emerald-900/20'
+                                : 'bg-gradient-to-br from-red-600/90 to-[#ED1B2F]/90 border-red-500/30 text-white shadow-red-900/20'
+                              : isAdmin
+                                ? 'bg-[#121c24] border-white/5 border-l-4 border-l-emerald-500 text-slate-200 shadow-black/40'
+                                : 'bg-[#1e1315] border-white/5 border-l-4 border-l-[#ED1B2F] text-slate-200 shadow-black/40'
                           }`}>
-                            <p className="text-[15px] leading-relaxed whitespace-pre-wrap font-medium tracking-tight selection:bg-white/20">{remark.text}</p>
+                            <p className="text-[14px] leading-relaxed whitespace-pre-wrap font-medium tracking-tight selection:bg-white/20 select-text">{remark.text}</p>
                             
                             {/* Remark Attachments */}
                             {remark.attachments?.length > 0 && (
-                              <div className={`mt-6 pt-5 border-t space-y-3 ${isAdmin ? 'border-white/5' : 'border-white/20'}`}>
+                              <div className={`mt-4 pt-4 border-t space-y-2.5 ${isMe ? 'border-white/20' : 'border-white/5'}`}>
                                 {remark.attachments.map((file, fIdx) => (
                                   <button 
                                     key={fIdx}
                                     onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                    className={`flex items-center gap-4 p-4 rounded-[1.5rem] border transition-all w-full text-left group/file overflow-hidden relative ${
-                                      isAdmin 
-                                        ? 'bg-white/[0.03] border-white/5 hover:bg-white/[0.08]' 
-                                        : 'bg-white/10 border-white/10 hover:bg-white/20'
+                                    className={`flex items-center gap-3.5 p-3 rounded-xl border transition-all w-full text-left group/file overflow-hidden relative ${
+                                      isMe 
+                                        ? 'bg-white/10 border-white/10 hover:bg-white/15' 
+                                        : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.06]'
                                     }`}
                                   >
-                                    <div className={`p-3 rounded-xl transition-all duration-500 group-hover/file:scale-110 group-hover/file:rotate-6 ${isAdmin ? 'bg-blue-500/20 text-blue-400' : 'bg-white/20 text-white'}`}>
-                                      <File size={18} strokeWidth={2.5} />
+                                    <div className={`p-2.5 rounded-lg transition-all duration-300 group-hover/file:scale-110 group-hover/file:rotate-6 ${
+                                      isMe ? 'bg-white/10 text-white' : isAdmin ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-[#ED1B2F]'
+                                    }`}>
+                                      <File size={16} strokeWidth={2.5} />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-[12px] font-black truncate tracking-tight uppercase">{file.originalName || file.filename}</p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                         <span className="text-[9px] font-black opacity-50 tracking-[0.2em]">{(file.size / 1024).toFixed(1)} KB</span>
+                                      <p className="text-[11px] font-black truncate tracking-tight uppercase text-slate-200">{file.originalName || file.filename}</p>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                         <span className="text-[8px] font-bold opacity-60 tracking-wider">{(file.size / 1024).toFixed(1)} KB</span>
                                          <div className="w-1 h-1 bg-white/20 rounded-full" />
-                                         <span className="text-[9px] font-black text-blue-400 tracking-[0.2em]">Verified File</span>
+                                         <span className={`text-[8px] font-extrabold tracking-wider uppercase ${isMe ? 'text-white/80' : isAdmin ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Secure Attachment</span>
                                       </div>
                                     </div>
-                                    <div className="p-2.5 bg-white/5 rounded-xl opacity-0 group-hover/file:opacity-100 transition-all">
-                                      <Download size={16} />
+                                    <div className="p-2 bg-white/5 rounded-lg text-slate-400 group-hover/file:text-white transition-colors">
+                                      <Download size={14} />
                                     </div>
                                   </button>
                                 ))}
@@ -351,68 +1065,49 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
                 )}
               </div>
 
-              {/* User Reply Input */}
+              {/* Conversation Reply Input — visible for all non-Resolved tickets */}
               {ticket.status !== 'Resolved' && (
                 <div className="relative group">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[2rem] blur opacity-10 group-focus-within:opacity-30 transition duration-1000"></div>
+                  <div className="absolute -inset-1 bg-gradient-to-r from-red-600 to-[#ED1B2F] rounded-[2rem] blur opacity-5 group-focus-within:opacity-20 transition duration-1000"></div>
                   <div className="relative">
                     <textarea 
-                      id="remark-input"
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
                       placeholder="Type your message here..."
-                      className="w-full bg-[#161b26] border border-white/10 rounded-[2rem] p-5 text-[15px] text-white focus:outline-none focus:border-blue-500/50 transition-all resize-none h-28 shadow-2xl pr-24 scrollbar-none font-medium placeholder:text-slate-600"
+                      className="w-full bg-[#131924] border border-white/10 rounded-[2rem] p-5 text-[14px] text-white focus:outline-none focus:border-red-500/40 transition-all resize-none h-28 shadow-2xl pr-28 scrollbar-none font-medium placeholder:text-slate-650"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
-                          document.getElementById('send-remark-btn').click();
+                          handleSendRemark();
                         }
                       }}
                     />
                     <div className="absolute right-4 bottom-4 flex items-center gap-2">
                        <input 
                          type="file" 
-                         id="remark-file-input" 
+                         ref={replyFileRef}
                          multiple 
                          className="hidden" 
-                         onChange={(e) => {
-                           const count = e.target.files?.length || 0;
-                           const label = document.getElementById('file-count-label');
-                           if (label) label.innerText = count > 0 ? `${count} FILES` : '';
-                         }}
+                         onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
                        />
-                       <span id="file-count-label" className="text-[9px] font-black text-blue-400 uppercase tracking-widest"></span>
+                       {replyFiles.length > 0 && (
+                         <span className="text-[9px] font-black text-[#ED1B2F] uppercase tracking-widest animate-pulse mr-1">
+                           {replyFiles.length} FILES
+                         </span>
+                       )}
                        <button 
-                         onClick={() => document.getElementById('remark-file-input').click()}
-                         className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/10 transition-all"
+                         onClick={() => replyFileRef.current?.click()}
+                         className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/10 transition-all cursor-pointer"
                          title="Attach Files"
                        >
                          <UploadCloud size={18} />
                        </button>
                        <button 
-                        id="send-remark-btn"
-                        onClick={async (e) => {
-                          const textarea = document.getElementById('remark-input');
-                          const fileInput = document.getElementById('remark-file-input');
-                          const text = textarea.value.trim();
-                          const files = fileInput.files ? Array.from(fileInput.files) : [];
-                          
-                          if (text || files.length > 0) {
-                            setIsSubmitting(true);
-                            try {
-                              await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, [], [], files);
-                              textarea.value = '';
-                              fileInput.value = '';
-                              const label = document.getElementById('file-count-label');
-                              if (label) label.innerText = '';
-                              await fetchTickets();
-                            } finally {
-                              setIsSubmitting(false);
-                            }
-                          }
-                        }}
-                        disabled={isSubmitting}
-                        className="p-3 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all shadow-lg shadow-blue-600/30 disabled:opacity-50"
+                        onClick={handleSendRemark}
+                        disabled={isSubmitting || (!replyText.trim() && replyFiles.length === 0)}
+                        className="p-3 bg-gradient-to-r from-red-600 to-[#ED1B2F] hover:from-red-500 hover:to-red-400 text-white rounded-2xl transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 cursor-pointer"
                       >
-                        <Send size={20} />
+                        <Send size={18} />
                       </button>
                     </div>
                   </div>
@@ -511,6 +1206,7 @@ export default function TicketViewerModal({ ticket, isOpen, onClose }) {
           </div>
         </motion.div>
       </div>
+      ) : null}
     </AnimatePresence>
   );
 }

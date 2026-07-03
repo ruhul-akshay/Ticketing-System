@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 dotenv.config();
 
-import Ticket from './models/Ticket.js';
+import Ticket from './src/models/Ticket.js';
 
 async function testUpdate() {
   await mongoose.connect(process.env.MONGODB_URI);

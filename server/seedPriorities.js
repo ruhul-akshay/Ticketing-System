@@ -1,4 +1,4 @@
-import Priority from './models/Priority.js';
+import Priority from './src/models/Priority.js';
 
 const seedPriorities = async () => {
   const count = await Priority.countDocuments();

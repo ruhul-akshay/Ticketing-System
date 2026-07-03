@@ -4,28 +4,59 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import Footer from './Footer';
-import { useAuthStore } from '../../core/store/useAuthStore';
-import { useTicketStore } from '../../core/store/useTicketStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useTicketStore } from '../../store/useTicketStore';
+import { useThemeStore } from '../../store/useThemeStore';
 
 const MainLayout = () => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, checkAuth, user } = useAuthStore();
   const { fetchTickets } = useTicketStore();
+  const { initFromUser } = useThemeStore();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Sync theme settings when user is loaded
+  useEffect(() => {
+    if (user && user.preferences) {
+      initFromUser(user.preferences);
+    }
+  }, [user, initFromUser]);
+
+  // Run initial session check on mount
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   // Close mobile menu when route changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // Initial ticket load
   useEffect(() => {
     if (isAuthenticated) {
       fetchTickets();
     }
   }, [isAuthenticated, fetchTickets]);
 
+  // Background auto-refresh polling based on user preferences
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    const prefs = user?.preferences || {};
+    const refreshSeconds = prefs.autoRefreshInterval !== undefined ? prefs.autoRefreshInterval : 4;
+    
+    if (refreshSeconds <= 0) return;
+    
+    const interval = setInterval(() => {
+      fetchTickets().catch(err => console.error('Error auto-refreshing tickets:', err));
+    }, refreshSeconds * 1000);
+    
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchTickets, user?.preferences?.autoRefreshInterval]);
+
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
   return (

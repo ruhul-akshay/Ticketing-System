@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import User from './models/User.js';
+import ClientUser from './src/models/ClientUser.js';
 
 dotenv.config();
 
@@ -11,17 +11,17 @@ const seedDatabase = async () => {
     console.log('Connected to MongoDB');
 
     // Clear only users to preserve other data if needed
-    await User.deleteMany({});
+    await ClientUser.deleteMany({});
     console.log('Cleared existing users');
 
     // Create Super Admin only
     const hashedPassword = await bcrypt.hash('123456', 10);
     
-    await User.create({
+    await ClientUser.create({
       email: 'astplticket@akshay.com',
       password: hashedPassword,
-      name: 'Ruhul Amin',
-      employeeCode: 'SA001',
+      name: 'Akshay Ticketing',
+      employeeCode: '0000',
       role: 'superadmin'
     });
 

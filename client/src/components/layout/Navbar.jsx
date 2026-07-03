@@ -1,24 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Bell, Settings, LogOut, User as UserIcon, Menu } from 'lucide-react';
-import { useAuthStore } from '../../core/store/useAuthStore';
-import { useNotificationStore } from '../../core/store/useNotificationStore';
-import { useTicketStore } from '../../core/store/useTicketStore';
+import { Search, Bell, Settings, LogOut, User as UserIcon, Menu, Sun, Moon, Paperclip } from 'lucide-react';
+import { useThemeStore } from '../../store/useThemeStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import { useTicketStore } from '../../store/useTicketStore';
 import { useNavigate } from 'react-router-dom';
 import TicketViewerModal from '../ui/TicketViewerModal';
+import ProfileSettingsModal from '../ui/ProfileSettingsModal';
 
 const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const { user, logout } = useAuthStore();
-  const { notifications, fetchNotifications, markAsRead } = useNotificationStore();
+  const { notifications, fetchNotifications, markAsRead, downloadAttachment } = useNotificationStore();
   
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const { resolvedTheme, toggleTheme } = useThemeStore();
 
   const { tickets } = useTicketStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
+  
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState('profile');
+  const [prevUnreadCount, setPrevUnreadCount] = useState(0);
 
   const searchResults = React.useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -34,7 +41,52 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
     fetchNotifications();
   }, [fetchNotifications]);
 
+  // Background polling for notifications
+  useEffect(() => {
+    if (!user) return;
+    const prefs = user.preferences || {};
+    const refreshSeconds = prefs.autoRefreshInterval !== undefined ? prefs.autoRefreshInterval : 4;
+    
+    if (refreshSeconds <= 0) return;
+    
+    const interval = setInterval(() => {
+      fetchNotifications().catch(err => console.error('Error fetching notifications:', err));
+    }, Math.max(refreshSeconds, 6) * 1000); // Poll notifications at a minimum of 6 seconds to preserve resources
+    
+    return () => clearInterval(interval);
+  }, [fetchNotifications, user?.preferences?.autoRefreshInterval, user]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  useEffect(() => {
+    // Play sound alert if unread count increases (skip initial load)
+    if (unreadCount > prevUnreadCount && prevUnreadCount > 0) {
+      const prefs = user?.preferences || {};
+      if (prefs.soundEnabled !== false) {
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.15);
+          
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.25);
+        } catch (e) {
+          console.warn('AudioContext failed:', e);
+        }
+      }
+    }
+    setPrevUnreadCount(unreadCount);
+  }, [unreadCount, prevUnreadCount, user]);
 
   const handleLogout = () => {
     logout();
@@ -69,7 +121,7 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="absolute top-full left-0 right-0 mt-3 bg-[#111620] border border-white/10 rounded-2xl shadow-2xl overflow-hidden py-2 z-50 backdrop-blur-xl"
+                className="absolute top-full left-0 w-[280px] sm:w-full mt-3 bg-[#111620] border border-white/10 rounded-2xl shadow-2xl overflow-hidden py-2 z-50 backdrop-blur-xl"
               >
                 <div className="px-5 py-2 border-b border-white/5 bg-white/[0.02]">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Search Results</span>
@@ -105,6 +157,30 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
       </div>
       
       <div className="flex items-center gap-5">
+        <motion.button 
+          whileHover={{ scale: 1.05 }} 
+          whileTap={{ scale: 0.95 }} 
+          onClick={toggleTheme}
+          className="relative p-2.5 text-slate-400 hover:text-white transition-colors rounded-xl hover:bg-[#181f2b] border border-transparent hover:border-white/5 flex items-center justify-center w-10 h-10 overflow-hidden"
+          aria-label="Toggle theme"
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={resolvedTheme}
+              initial={{ y: -20, opacity: 0, rotate: -90 }}
+              animate={{ y: 0, opacity: 1, rotate: 0 }}
+              exit={{ y: 20, opacity: 0, rotate: 90 }}
+              transition={{ duration: 0.2 }}
+            >
+              {resolvedTheme === 'dark' ? (
+                <Sun size={20} className="text-amber-400" />
+              ) : (
+                <Moon size={20} className="text-blue-600" />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </motion.button>
+
         <div className="relative">
           <motion.button 
             whileHover={{ scale: 1.05 }} 
@@ -135,10 +211,24 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                   {notifications.length === 0 ? (
                      <div className="px-5 py-8 text-center text-sm text-slate-500 font-medium">No alerts currently circulating.</div>
                   ) : notifications.map(notif => (
-                     <button key={notif._id} onClick={() => { if(!notif.read) markAsRead(notif._id); }} className={`w-full text-left p-4 border-b border-white/5 transition-all block relative ${notif.read ? 'opacity-60 hover:opacity-100 hover:bg-white/[0.02]' : 'bg-blue-500/[0.03] hover:bg-blue-500/[0.08]'}`}>
+                     <button key={notif._id} onClick={() => { if(!notif.read) markAsRead(notif._id); }} className={`w-full text-left p-4 border-b border-white/5 transition-all block relative bg-white/[0.01] hover:bg-white/[0.03] ${notif.read ? '' : 'bg-blue-500/[0.03]'}`}>
                         {!notif.read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 pointer-events-none"></div>}
                         <h4 className={`text-[13px] ${notif.read ? 'font-medium text-slate-300' : 'font-bold text-white'} mb-1 leading-snug`}>{notif.title}</h4>
                         <p className="text-[12px] text-slate-400 leading-relaxed font-medium">{notif.message}</p>
+                        {notif.attachments && notif.attachments.length > 0 && (
+                           <div className="mt-3 flex flex-wrap gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+                             {notif.attachments.map(att => (
+                               <button
+                                 key={att._id}
+                                 onClick={() => downloadAttachment(notif._id, att._id, att.originalName)}
+                                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg text-[10px] font-bold text-blue-400 transition-colors"
+                               >
+                                 <Paperclip size={10} />
+                                 <span className="truncate max-w-[100px]">{att.originalName}</span>
+                               </button>
+                             ))}
+                           </div>
+                        )}
                      </button>
                   ))}
                 </div>
@@ -177,12 +267,37 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                   <p className="text-[12px] font-medium text-slate-400 truncate">{user?.email || 'guest@example.com'}</p>
                 </div>
                 <div className="py-2 px-2 flex flex-col gap-1">
-                  <button className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors">
+                  <button 
+                    onClick={() => {
+                      setActiveProfileTab('profile');
+                      setIsProfileModalOpen(true);
+                      setShowProfile(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                  >
                     <UserIcon size={16} /> Profile Information
                   </button>
-                  <button className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors">
+                  <button 
+                    onClick={() => {
+                      setActiveProfileTab('settings');
+                      setIsProfileModalOpen(true);
+                      setShowProfile(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                  >
                     <Settings size={16} /> Dashboard Settings
                   </button>
+                  {(user?.role === 'Super Admin' || user?.role === 'superadmin') && (
+                    <button 
+                      onClick={() => {
+                        navigate('/super-admin/settings');
+                        setShowProfile(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                    >
+                      <Settings size={16} /> CC Email Settings
+                    </button>
+                  )}
                 </div>
                 <div className="border-t border-white/5 py-2 px-2">
                   <button 
@@ -202,6 +317,12 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         ticket={selectedTicket}
         isOpen={!!selectedTicket}
         onClose={() => setSelectedTicket(null)}
+      />
+
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        initialTab={activeProfileTab}
       />
     </header>
   );

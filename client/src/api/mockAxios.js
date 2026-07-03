@@ -1,0 +1,30 @@
+import axios from 'axios';
+
+// Create Axios Instance attached to backend
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'https://ticketing-frontend-backend.gtm47p.easypanel.host/api',
+  timeout: 55000,
+  headers: {
+    'Content-Type': 'application/json',
+  }
+});
+
+api.interceptors.request.use(
+  (config) => {
+    const token = sessionStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    // Explicitly let browser set correct multipart boundary for uploads
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+      if (config.headers.common) delete config.headers.common['Content-Type'];
+    }
+    
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+export default api;
