@@ -33,14 +33,11 @@ export const generateTicketNumber = async (departmentId) => {
     if (dept?.name) deptInitial = dept.name[0].toUpperCase();
   }
 
-  const start = new Date(now.setHours(0, 0, 0, 0));
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-
   const count = await Ticket.countDocuments({
-    createdAt: { $gte: start, $lt: end },
     ...(departmentId && { department: departmentId })
   });
 
   return `T${yy}${mm}${dd}${deptInitial}${String(count + 1).padStart(3, '0')}`;
 };
+
+

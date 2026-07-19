@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Bell, Settings, LogOut, User as UserIcon, Menu, Sun, Moon, Paperclip } from 'lucide-react';
+import { Search, Bell, Settings, LogOut, User as UserIcon, Menu, Sun, Moon, Paperclip, Calendar, DollarSign, FileText } from 'lucide-react';
 import { useThemeStore } from '../../store/useThemeStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -296,6 +296,39 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                       className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
                     >
                       <Settings size={16} /> CC Email Settings
+                    </button>
+                  )}
+                  {(user?.role === 'Super Admin' || user?.role === 'superadmin') && (
+                    <button 
+                      onClick={() => {
+                        navigate('/super-admin/pricing');
+                        setShowProfile(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                    >
+                      <DollarSign size={16} className="text-emerald-400" /> Pricing Setup
+                    </button>
+                  )}
+                  {(user?.role === 'Super Admin' || user?.role === 'superadmin') && (
+                    <button 
+                      onClick={() => {
+                        navigate('/super-admin/reports');
+                        setShowProfile(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                    >
+                      <FileText size={16} className="text-red-400" /> System Reports
+                    </button>
+                  )}
+                  {(user?.role === 'Super Admin' || user?.role === 'superadmin' || user?.role === 'Consultant' || user?.role === 'Admin') && (
+                    <button 
+                      onClick={() => {
+                        navigate('/super-admin/holidays');
+                        setShowProfile(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                    >
+                      <Calendar size={16} /> Holiday Master
                     </button>
                   )}
                 </div>

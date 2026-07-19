@@ -128,6 +128,22 @@ export default function SuperAdminTickets() {
     }
   };
 
+  const formatHoursToHM = (hoursVal) => {
+    const totalMinutes = Math.round(Number(hoursVal || 0) * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (hrs > 0 && mins > 0) {
+      return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} and ${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+    }
+    if (hrs > 0) {
+      return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
+    }
+    if (mins > 0) {
+      return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+    }
+    return '0 hours';
+  };
+
   const getStatusColor = (s) => {
     switch(s?.toLowerCase()) {
       case 'open': case 'pending': return 'red';
@@ -318,6 +334,7 @@ export default function SuperAdminTickets() {
               </select>
               <select value={filters.priority} onChange={e => {setFilters(p=>({...p, priority: e.target.value})); setCurrentPage(1);}} className="bg-[#111620] border border-white/5 rounded-xl px-4 py-3 text-white text-[13px] font-bold focus:outline-none focus:border-blue-500/50 shadow-inner">
                 <option value="all">All Priorities</option>
+                <option value="critical">Critical</option>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
@@ -348,19 +365,19 @@ export default function SuperAdminTickets() {
                  <tr><td colSpan="9" className="p-10 text-center text-slate-500 font-bold uppercase tracking-widest">No matching tickets found.</td></tr>
                ) : currentTickets.map((t, i) => (
                  <motion.tr initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }} key={t.id || t._id} className="border-b border-white/5 hover:bg-white/[0.03] transition-colors group cursor-pointer" onClick={() => setSelectedTicket(t)}>
-                    <td className="p-4 text-[11px] font-black text-slate-400">{t.ticketNumber}</td>
-                    <td className="p-4">
+                    <td className="p-4 align-middle text-[11px] font-black text-slate-400">{t.ticketNumber}</td>
+                    <td className="p-4 align-middle">
                        <span className="font-bold text-[14px] text-white flex items-center gap-2 truncate mb-1 group-hover:text-blue-400 transition-colors">
                          {t.title}
                          {t.attachments?.length > 0 && <Paperclip size={14} className="text-blue-400 shrink-0" />}
                        </span>
                        <span className="text-[12px] text-slate-500 font-medium truncate block max-w-[320px]">{t.description}</span>
                     </td>
-                    <td className="p-4"><Badge color="blue" size="sm" className="max-w-[120px] truncate">{t.clientName || 'N/A'}</Badge></td>
-                    <td className="p-4"><Badge color={getStatusColor(t.status)} size="sm">{t.status}</Badge></td>
-                    <td className="p-4"><span className={`text-[11px] font-black uppercase tracking-wider ${getPriorityColor(t.priority)==='red'?'text-red-400':getPriorityColor(t.priority)==='yellow'?'text-yellow-400':'text-emerald-400'}`}>{t.priority}</span></td>
-                    <td className="p-4 text-[12px] font-bold text-slate-300 flex items-center gap-1.5"><Badge color="purple" size="sm" className="max-w-[120px] truncate">{t.department}</Badge></td>
-                    <td className="p-4">
+                    <td className="p-4 align-middle"><Badge color="blue" size="sm" className="max-w-[120px] truncate">{t.clientName || 'N/A'}</Badge></td>
+                    <td className="p-4 align-middle"><Badge color={getStatusColor(t.status)} size="sm">{t.status}</Badge></td>
+                    <td className="p-4 align-middle"><span className={`text-[11px] font-black uppercase tracking-wider ${getPriorityColor(t.priority)==='red'?'text-red-400':getPriorityColor(t.priority)==='yellow'?'text-yellow-400':'text-emerald-400'}`}>{t.priority}</span></td>
+                    <td className="p-4 align-middle text-[12px] font-bold text-slate-300"><Badge color="purple" size="sm" className="max-w-[120px] truncate">{t.department}</Badge></td>
+                    <td className="p-4 align-middle">
                        {t.assignee ? (
                          <div className="flex items-center gap-2">
                            <div className="w-6 h-6 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center text-[10px] border border-blue-500/30 shrink-0 font-bold">{t.assignee.charAt(0).toUpperCase()}</div>
@@ -370,13 +387,13 @@ export default function SuperAdminTickets() {
                          <span className="text-[11px] text-slate-500 font-bold italic">Unassigned</span>
                        )}
                     </td>
-                    <td className="p-4">
-                       <div className="flex items-center gap-1.5 text-blue-400 font-black text-[13px]">
+                    <td className="p-4 align-middle">
+                       <div className="flex items-center gap-1.5 text-blue-400 font-black text-[12px] whitespace-nowrap">
                          <Clock size={12}/>
-                         {t.workLogs?.reduce((acc, l) => acc + (l.hours || 0), 0).toFixed(1)}h
+                         {formatHoursToHM(t.workLogs?.reduce((acc, l) => acc + (l.hours || 0), 0))}
                        </div>
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 align-middle text-right">
                        <div className="flex items-center justify-end gap-2">
                          <button onClick={(e) => { e.stopPropagation(); setSelectedTicket(t); }} className="text-[10px] font-bold text-slate-400 hover:text-white bg-white/5 px-3 py-1.5 rounded-lg border border-transparent shadow-sm hover:border-white/10 uppercase tracking-widest transition-all">View</button>
                          {t.status !== 'Resolved' && (

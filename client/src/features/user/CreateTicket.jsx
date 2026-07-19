@@ -4,6 +4,8 @@ import { UploadCloud, File, X, Send, Mail } from 'lucide-react';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useDepartmentStore } from '../../store/useDepartmentStore';
+import { usePriorityStore } from '../../store/usePriorityStore';
+import api from '../../api/mockAxios';
 import { useNavigate } from 'react-router-dom';
 
 export default function CreateTicket() {
@@ -20,6 +22,11 @@ export default function CreateTicket() {
   const { addTicket, isLoading } = useTicketStore();
   const { user } = useAuthStore();
   const { departments, fetchDepartments } = useDepartmentStore();
+  const { priorities, fetchPriorities } = usePriorityStore();
+
+  useEffect(() => {
+    fetchPriorities();
+  }, [fetchPriorities]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -187,10 +194,18 @@ export default function CreateTicket() {
               onChange={(e) => setPriority(e.target.value)}
               className="w-full bg-[#1d2633] border border-white/5 text-white rounded-xl px-4 py-3.5 focus:outline-none focus:border-blue-500/50 transition-all font-medium appearance-none"
             >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Critical">Critical</option>
+              {priorities.length > 0 ? (
+                priorities.map(p => (
+                  <option key={p.name} value={p.name}>{p.name}</option>
+                ))
+              ) : (
+                <>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </>
+              )}
             </select>
           </div>
           

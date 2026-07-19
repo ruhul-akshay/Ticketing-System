@@ -315,7 +315,10 @@ export const updateUser = async (currentUser, id, data) => {
     phoneNumber,
     position,
     role,
-    preferences
+    preferences,
+    leaveFrom,
+    leaveTo,
+    hourlyCost
   } = data;
   
   const user = await ClientUser.findById(id);
@@ -418,6 +421,9 @@ export const updateUser = async (currentUser, id, data) => {
   if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
   if (position !== undefined) user.position = position;
   if (role !== undefined) user.role = role;
+  if (leaveFrom !== undefined) user.leaveFrom = leaveFrom ? new Date(leaveFrom) : null;
+  if (leaveTo !== undefined) user.leaveTo = leaveTo ? new Date(leaveTo) : null;
+  if (hourlyCost !== undefined) user.hourlyCost = Number(hourlyCost) || 0;
   if (preferences !== undefined) {
     user.preferences = { ...user.preferences, ...preferences };
   }

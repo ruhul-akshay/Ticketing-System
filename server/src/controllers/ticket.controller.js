@@ -160,7 +160,7 @@ export const updateStatus = async (req, res) => {
 
 export const addRemark = async (req, res) => {
   try {
-    const ticket = await ticketService.addRemarkOnly(req.user, req.params.id, req.body.text);
+    const ticket = await ticketService.addRemarkOnly(req.user, req.params.id, req.body.text, req.body.isInternal);
     res.json(ticket);
   } catch (err) {
     console.error('ADD REMARK ERROR:', err);

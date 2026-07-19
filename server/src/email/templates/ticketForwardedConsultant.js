@@ -52,7 +52,7 @@ export const sendTicketForwardedConsultantEmail = async (
   /* ── Detail table rows ──────────────────────────────────── */
   const rows = [
     infoRow('Subject',      ticket.title     || '—'),
-    infoRow('Department',   ticket.department || '—'),
+    infoRow('Department',   ticket.department?.name || ticket.department || '—'),
     infoRow('Priority',     priorityBadge(ticket.priority)),
     infoRow('Submitted By', submittedBy),
     ...(clientName ? [infoRow('Client', clientName)] : []),

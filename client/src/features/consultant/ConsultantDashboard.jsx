@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ClipboardList, Clock, CheckCircle, Building2, User,
-  Briefcase, TrendingUp, AlertCircle, Download, Star, Paperclip
+  Briefcase, TrendingUp, AlertCircle, Download, Star, Paperclip, XCircle,
+  Eye, Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -13,16 +15,19 @@ import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
+import { useSystemSettingStore } from '../../store/useSystemSettingStore';
+import TicketViewerModal from '../../components/ui/TicketViewerModal';
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 
-function StatCard({ title, value, sub, icon, color, delay = 0 }) {
+function StatCard({ title, value, sub, icon, color, delay = 0, onClick }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay }}
-      className="glass-card p-6 rounded-2xl border border-white/5 relative overflow-hidden group"
+      onClick={onClick}
+      className={`glass-card p-6 rounded-2xl border border-white/5 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-white/10 hover:bg-white/[0.02] transition-all duration-300' : ''}`}
     >
       <div className={`absolute top-0 right-0 w-32 h-32 bg-${color}-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-${color}-500/20`} />
       <div className="flex justify-between items-start relative z-10">
@@ -145,11 +150,13 @@ function useLocalStats(consultantId) {
 
     // Filter tickets assigned to this consultant
     const consultantTickets = tickets.filter(t => {
-      const assignedId = t.assignedTo?._id || t.assignedTo;
+      const assignedId = t.original?.assignedTo?._id || t.original?.assignedTo || t.assignedTo?._id || t.assignedTo;
       return assignedId && String(assignedId) === String(targetConsultantId);
     });
 
-    const open = consultantTickets.filter(t => ['open', 'pending', 'assigned', 'hold', 'on hold'].includes(t.status?.toLowerCase())).length;
+    const open = consultantTickets.filter(t => ['open', 'pending', 'assigned'].includes(t.status?.toLowerCase())).length;
+    const onHold = consultantTickets.filter(t => ['on hold', 'hold'].includes(t.status?.toLowerCase())).length;
+    const cancelled = consultantTickets.filter(t => t.status?.toLowerCase() === 'cancelled').length;
     const resolved = consultantTickets.filter(t => ['resolved', 'closed'].includes(t.status?.toLowerCase())).length;
     const total = consultantTickets.length;
 
@@ -219,13 +226,14 @@ function useLocalStats(consultantId) {
     // Reviews (Feedback)
     const reviewsList = [];
     consultantTickets.forEach(t => {
-      if (t.feedback?.rating) {
+      const fb = t.original?.feedback || t.feedback;
+      if (fb?.rating) {
         reviewsList.push({
           ticketNumber: t.ticketNumber,
           title: t.title,
-          rating: t.feedback.rating,
-          comment: t.feedback.comment || '',
-          submittedAt: t.feedback.submittedAt,
+          rating: fb.rating,
+          comment: fb.comment || '',
+          submittedAt: fb.submittedAt,
           userName: t.createdBy?.name || t.original?.createdBy?.name || 'Client',
           clientName: t.clientName || t.original?.createdBy?.clientName || 'Unknown'
         });
@@ -243,7 +251,7 @@ function useLocalStats(consultantId) {
       department: dept
         ? { name: dept?.name || dept, description: '', categories: [] }
         : null,
-      tickets: { total, open, resolved, solvedByConsultant: resolved },
+      tickets: { total, open, onHold, cancelled, resolved, solvedByConsultant: resolved },
       workHours: {
         total: +totalWorkHours.toFixed(1),
         avgResolutionHours: 0,
@@ -301,8 +309,26 @@ const getDateRange = (preset, custom) => {
   return { start, end };
 };
 
+const formatHoursToHM = (hoursVal) => {
+  const totalMinutes = Math.round(Number(hoursVal || 0) * 60);
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  const parts = [];
+  if (hrs > 0) {
+    parts.push(`${hrs} ${hrs === 1 ? 'hr' : 'hrs'}`);
+  }
+  if (mins > 0) {
+    parts.push(`${mins} ${mins === 1 ? 'min' : 'mins'}`);
+  }
+  return parts.length > 0 ? parts.join(' ') : '0 mins';
+};
+
 export default function ConsultantDashboard({ consultantId = null }) {
+  const navigate = useNavigate();
   const localStats = useLocalStats(consultantId);
+  const { settings, fetchSettings } = useSystemSettingStore();
+  const { fetchTickets, tickets: storeTickets } = useTicketStore();
+  const { user } = useAuthStore();
   const [apiStats, setApiStats] = useState(null);
   const [apiLoading, setApiLoading] = useState(true);
   const { resolvedTheme } = useThemeStore();
@@ -311,11 +337,65 @@ export default function ConsultantDashboard({ consultantId = null }) {
   const [datePreset, setDatePreset] = useState('last_30');
   const [customRange, setCustomRange] = useState({ startDate: '', endDate: '' });
 
+  const [isWorkHoursModalOpen, setIsWorkHoursModalOpen] = useState(false);
+  const [selectedTicketForViewer, setSelectedTicketForViewer] = useState(null);
+  const [expandedTicketId, setExpandedTicketId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
   const { notifications, fetchNotifications, markAsRead, downloadAttachment } = useNotificationStore();
+
+  const targetConsultantId = consultantId || user?._id || user?.id;
+
+  const workHoursBreakdown = useMemo(() => {
+    const breakdown = [];
+    storeTickets.forEach(ticket => {
+      let ticketHours = 0;
+      const logs = [];
+      (ticket.workLogs || []).forEach(log => {
+        const logBy = log.addedBy?._id || log.addedBy;
+        if (String(logBy) === String(targetConsultantId)) {
+          const hrs = Number(log.hours) || 0;
+          ticketHours += hrs;
+          logs.push({
+            date: log.date,
+            hours: hrs,
+          });
+        }
+      });
+
+      if (ticketHours > 0) {
+        breakdown.push({
+          id: ticket.id,
+          ticketNumber: ticket.ticketNumber,
+          title: ticket.title,
+          clientName: ticket.clientName || 'Unknown',
+          status: ticket.status,
+          priority: ticket.priority,
+          hours: +ticketHours.toFixed(1),
+          logs: logs.sort((a, b) => new Date(b.date) - new Date(a.date)),
+          original: ticket
+        });
+      }
+    });
+
+    return breakdown.sort((a, b) => b.hours - a.hours);
+  }, [storeTickets, targetConsultantId]);
+
+  const filteredBreakdown = useMemo(() => {
+    if (!searchQuery.trim()) return workHoursBreakdown;
+    const q = searchQuery.toLowerCase();
+    return workHoursBreakdown.filter(item => 
+      item.ticketNumber.toLowerCase().includes(q) ||
+      item.title.toLowerCase().includes(q) ||
+      item.clientName.toLowerCase().includes(q)
+    );
+  }, [workHoursBreakdown, searchQuery]);
 
   useEffect(() => {
     fetchNotifications();
-  }, [fetchNotifications]);
+    fetchSettings();
+    fetchTickets().catch(err => console.error('Error fetching tickets:', err));
+  }, [fetchNotifications, fetchSettings, fetchTickets]);
 
   // Try to load enriched data from the new backend endpoint.
   useEffect(() => {
@@ -598,40 +678,106 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '�
         </div>
       </motion.div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard
-          title="Total Assigned Tickets"
-          value={tickets.total}
-          sub={`${tickets.open} open · ${tickets.resolved} resolved`}
-          icon={<ClipboardList size={22} />}
-          color="blue"
-          delay={0.1}
-        />
-        <StatCard
-          title="Resolved"
-          value={tickets.resolved}
-          sub={`${tickets.total > 0 ? Math.round((tickets.resolved / tickets.total) * 100) : 0}% resolution rate`}
-          icon={<CheckCircle size={22} />}
-          color="green"
-          delay={0.15}
-        />
-        <StatCard
-          title="Total Work Hours"
-          value={`${workHours.total} hrs`}
-          sub="Across all logged sessions"
-          icon={<Clock size={22} />}
-          color="yellow"
-          delay={0.2}
-        />
-        <StatCard
-          title="Avg. Resolution Time"
-          value={workHours.avgResolutionHours > 0 ? `${workHours.avgResolutionHours} hrs` : '—'}
-          sub="Based on resolved tickets"
-          icon={<TrendingUp size={22} />}
-          color="purple"
-          delay={0.25}
-        />
+      {/* Section: Ticket Status Telemetry */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="text-blue-500" size={20} />
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Ticket Status Telemetry</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+          <StatCard
+            title="Total Assigned"
+            value={localStats.tickets.total}
+            sub="All assigned tickets"
+            icon={<ClipboardList size={22} />}
+            color="blue"
+            delay={0.1}
+            onClick={() => navigate('/consultant/tickets?status=all')}
+          />
+          <StatCard
+            title="Open Tickets"
+            value={localStats.tickets.open}
+            sub="Awaiting resolution"
+            icon={<AlertCircle size={22} />}
+            color="red"
+            delay={0.12}
+            onClick={() => navigate('/consultant/tickets?status=open')}
+          />
+          <StatCard
+            title="On Hold"
+            value={localStats.tickets.onHold}
+            sub="Pending client info"
+            icon={<Clock size={22} />}
+            color="yellow"
+            delay={0.14}
+            onClick={() => navigate('/consultant/tickets?status=on hold')}
+          />
+          <StatCard
+            title="Cancelled"
+            value={localStats.tickets.cancelled}
+            sub="Declined or duplicate"
+            icon={<XCircle size={22} />}
+            color="gray"
+            delay={0.16}
+            onClick={() => navigate('/consultant/tickets?status=cancelled')}
+          />
+          <StatCard
+            title="Resolved"
+            value={localStats.tickets.resolved}
+            sub="Closed and completed"
+            icon={<CheckCircle size={22} />}
+            color="green"
+            delay={0.18}
+            onClick={() => navigate('/consultant/tickets?status=resolved')}
+          />
+        </div>
+      </div>
+
+      {/* Section: Performance & Billing Analytics */}
+      <div className="space-y-4 pt-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="text-indigo-500" size={20} />
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Performance & Billing Analytics</h3>
+        </div>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${settings.showBillingToConsultants ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-5`}>
+          <StatCard
+            title="Total Work Hours"
+            value={`${workHours.total} hrs`}
+            sub="Across all logged sessions"
+            icon={<Clock size={22} />}
+            color="yellow"
+            delay={0.2}
+            onClick={() => setIsWorkHoursModalOpen(true)}
+          />
+          <StatCard
+            title="Avg. Resolution Time"
+            value={workHours.avgResolutionHours > 0 ? `${workHours.avgResolutionHours} hrs` : '—'}
+            sub="Based on resolved tickets"
+            icon={<TrendingUp size={22} />}
+            color="purple"
+            delay={0.25}
+          />
+          {settings.showBillingToConsultants && (
+            <StatCard
+              title="Hourly Rate"
+              value={workHours.hourlyCost ? `₹${workHours.hourlyCost}/hr` : '—'}
+              sub="Operational billing rate"
+              icon={<Briefcase size={22} />}
+              color="teal"
+              delay={0.3}
+            />
+          )}
+          {settings.showBillingToConsultants && (
+            <StatCard
+              title="Total Cost of Work"
+              value={workHours.totalCost ? `₹${workHours.totalCost}` : '—'}
+              sub="Hours worked * billing rate"
+              icon={<TrendingUp size={22} />}
+              color="emerald"
+              delay={0.35}
+            />
+          )}
+        </div>
       </div>
 
       {/* Department Info */}
@@ -845,6 +991,182 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '�
           </div>
         )}
       </motion.div>
+
+      {/* Work Hours Breakdown Modal */}
+      <AnimatePresence>
+        {isWorkHoursModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsWorkHoursModalOpen(false)}
+              className="absolute inset-0 bg-[#020617]/80 backdrop-blur-md"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 30 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="bg-[#111620] border border-white/10 w-full max-w-2xl rounded-[2rem] overflow-hidden shadow-2xl relative z-10 flex flex-col max-h-[85vh] backdrop-blur-xl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#181f2b]/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-yellow-500/20 text-yellow-400 rounded-xl">
+                    <Clock size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight">Work Hours Breakdown</h2>
+                    <p className="text-xs text-slate-400 mt-0.5 font-medium">Logged hours detailed per ticket</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsWorkHoursModalOpen(false)}
+                  className="p-2.5 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="p-4 border-b border-white/5 bg-[#181f2b]/30 flex items-center gap-2">
+                <div className="relative w-full flex items-center">
+                  <Search size={16} className="text-slate-400 absolute left-4 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by ticket number, title, or client..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-[#131924] border border-white/5 rounded-xl pl-11 pr-16 py-2.5 text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-yellow-500/50 shadow-inner"
+                  />
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 text-xs text-slate-400 hover:text-white px-2 py-1 bg-[#181f2b] border border-white/5 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Tickets List */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-3 custom-scrollbar">
+                {filteredBreakdown.length === 0 ? (
+                  <div className="text-center py-16 text-slate-500 italic text-sm flex flex-col items-center justify-center gap-2">
+                    <Clock size={36} className="text-slate-600 mb-1" />
+                    {searchQuery ? "No matching ticket logs found." : "No work hours logged yet."}
+                  </div>
+                ) : (
+                  filteredBreakdown.map((item) => {
+                    const isExpanded = expandedTicketId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`bg-[#181f2b]/50 border rounded-2xl p-4 transition-all duration-200 ${
+                          isExpanded 
+                            ? 'border-yellow-500/30 bg-[#181f2b]/80' 
+                            : 'border-white/5 hover:border-white/10 hover:bg-[#181f2b]'
+                        }`}
+                      >
+                        <div 
+                          className="flex justify-between items-center gap-4 cursor-pointer"
+                          onClick={() => setExpandedTicketId(isExpanded ? null : item.id)}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              <span className="text-[11px] font-black text-yellow-400 tracking-wider">
+                                {item.ticketNumber}
+                              </span>
+                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black border uppercase tracking-wider ${
+                                item.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                item.status === 'On Hold' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                                item.status === 'Cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
+                                'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              }`}>
+                                {item.status}
+                              </span>
+                              {item.clientName && (
+                                <span className="text-[11px] text-slate-400 font-bold truncate max-w-[150px]">
+                                  • {item.clientName}
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-white text-[14px] font-bold truncate">
+                              {item.title}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <div className="text-base font-black text-white">{formatHoursToHM(item.hours)}</div>
+                              <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                                {item.logs.length} {item.logs.length === 1 ? 'session' : 'sessions'}
+                              </div>
+                            </div>
+                            <div className="text-slate-400 hover:text-white transition-colors">
+                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Collapsible Session List */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-white/5 space-y-2">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                Work Session Logs
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTicketForViewer(item.original);
+                                }}
+                                className="px-2.5 py-1 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/20 hover:border-yellow-500/30 text-yellow-400 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye size={12} /> View Ticket Details
+                              </button>
+                            </div>
+                            <div className="max-h-36 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+                              {item.logs.map((log, idx) => (
+                                <div key={idx} className="flex justify-between items-center py-1.5 px-3 bg-[#111620] rounded-lg border border-white/5 text-[12px]">
+                                  <span className="text-slate-300 font-medium">
+                                    {new Date(log.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                  <span className="font-bold text-yellow-400">{formatHoursToHM(log.hours)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t border-white/5 bg-[#181f2b]/50 flex justify-between items-center text-sm font-bold">
+                <span className="text-slate-400">Total Work Hours:</span>
+                <span className="text-base text-yellow-400 font-black">{formatHoursToHM(workHours.total)}</span>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Ticket Viewer Modal */}
+      {selectedTicketForViewer && (
+        <TicketViewerModal
+          isOpen={!!selectedTicketForViewer}
+          onClose={() => setSelectedTicketForViewer(null)}
+          ticket={selectedTicketForViewer}
+        />
+      )}
     </div>
   );
 }

@@ -107,7 +107,11 @@ const ticketSchema = new mongoose.Schema({
       mimeType: String,
       size: Number,
       data: { type: Buffer, select: false }
-    }]
+    }],
+    isInternal: {
+      type: Boolean,
+      default: false
+    }
   }],
 
   /* ===== RESOLUTION DETAILS ===== */

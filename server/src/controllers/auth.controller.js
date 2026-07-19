@@ -125,7 +125,8 @@ export const completeProfile = async (req, res) => {
         client: updatedUser.client,
         phoneNumber: updatedUser.phoneNumber,
         position: updatedUser.position,
-        isFirstLogin: false
+        isFirstLogin: false,
+        isPrimaryContact: updatedUser.isPrimaryContact || false
       }
     });
   } catch (error) {

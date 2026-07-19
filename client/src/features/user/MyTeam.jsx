@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Navigate } from 'react-router-dom';
 import { Users, Plus, Download, Edit2, Trash2, Key, Mail, Briefcase, IdCard, Activity } from 'lucide-react';
 import { useClientUserStore } from '../../store/useClientUserStore';
 import ManageClientUserModal from '../../components/ui/ManageClientUserModal';
@@ -8,6 +8,10 @@ import { useAuthStore } from '../../store/useAuthStore';
 export default function MyTeam() {
   const { clientUsers, stats, fetchClientUsers, isLoading: clientUsersLoading, deleteClientUser, updateClientUserStatus, resetClientUserPassword } = useClientUserStore();
   const { user: currentUser } = useAuthStore();
+  
+  if (currentUser?.role === 'Client User' && !currentUser?.isPrimaryContact) {
+    return <Navigate to="/" replace />;
+  }
   
   const [searchParams] = useSearchParams();
   const initStatus = searchParams.get('status') || 'all';

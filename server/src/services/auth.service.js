@@ -59,6 +59,11 @@ export const loginUser = async ({ email, password }) => {
     { expiresIn: '7d' }
   );
 
+  // Self-heal: set isPrimaryContact to true if it is a clientuser and has no creator
+  if (user.role === 'clientuser' && !user.isPrimaryContact && !user.createdBy) {
+    user.isPrimaryContact = true;
+  }
+
   // Record last login timestamp
   user.lastLogin = new Date();
   await user.save();
@@ -72,7 +77,8 @@ export const loginUser = async ({ email, password }) => {
       department: user.department,
       clientName: user.clientName,
       client: user.client,
-      isFirstLogin: user.isFirstLogin || false
+      isFirstLogin: user.isFirstLogin || false,
+      isPrimaryContact: user.isPrimaryContact || false
     },
     token
   };

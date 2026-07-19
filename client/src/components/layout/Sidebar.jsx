@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { 
   LayoutDashboard, PlusCircle, Ticket, Star, 
   ClipboardList, BookOpen, Users, Shield, 
-  Building2, Briefcase, Activity, Radio, GitFork
+  Building2, Briefcase, Activity, Radio, GitFork, Calendar
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import logo from '../../assets/logo.png';
@@ -17,7 +17,7 @@ const Sidebar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
     { to: '/', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/create-ticket', icon: <PlusCircle size={20} />, label: 'Create Ticket' },
     { to: '/my-tickets', icon: <Ticket size={20} />, label: 'My Tickets' },
-    { to: '/my-team', icon: <Users size={20} />, label: 'My Team' },
+    ...(user?.isPrimaryContact ? [{ to: '/my-team', icon: <Users size={20} />, label: 'My Team' }] : []),
     { to: '/reviews', icon: <Star size={20} />, label: 'Reviews' },
   ];
 

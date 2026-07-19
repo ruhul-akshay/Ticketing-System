@@ -1,13 +1,13 @@
 import React, { useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Ticket, Clock, CheckCircle, AlertCircle, Building2, Paperclip } from 'lucide-react';
+import { Ticket, Clock, CheckCircle, AlertCircle, Building2, Paperclip, XCircle, Star, Award, TrendingUp } from 'lucide-react';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import api from '../../api/mockAxios';
 import Badge from '../../components/ui/Badge';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import SuperAdminDashboard from '../superadmin/SuperAdminDashboard';
 import { useThemeStore } from '../../store/useThemeStore';
 
@@ -150,15 +150,17 @@ const colorMap = {
   red: { bg: 'bg-red-500/20', text: 'text-red-400', glow: 'bg-red-600/20 group-hover:bg-red-500/30' },
   yellow: { bg: 'bg-orange-500/20', text: 'text-orange-400', glow: 'bg-orange-600/20 group-hover:bg-orange-500/30' },
   green: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', glow: 'bg-emerald-600/20 group-hover:bg-emerald-500/30' },
+  gray: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: 'bg-slate-600/20 group-hover:bg-slate-500/30' }
 };
 
-const StatCard = ({ title, value, icon, color, delay }) => (
+const StatCard = ({ title, value, icon, color, delay, onClick }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay, duration: 0.4 }}
     whileHover={{ y: -5 }}
-    className="bg-[#111620]/80 backdrop-blur-xl p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-white/5 relative overflow-hidden group shadow-xl"
+    onClick={onClick}
+    className={`bg-[#111620]/80 backdrop-blur-xl p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-white/5 relative overflow-hidden group shadow-xl ${onClick ? 'cursor-pointer hover:border-white/10 hover:bg-white/[0.02] transition-all duration-300' : ''}`}
   >
     <div className={`absolute -right-4 -top-4 w-40 h-40 ${colorMap[color].glow} rounded-full blur-[50px] transition-all duration-500`}></div>
     <div className="flex justify-between items-start relative z-10">
@@ -174,6 +176,7 @@ const StatCard = ({ title, value, icon, color, delay }) => (
 );
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { tickets } = useTicketStore();
   const { user } = useAuthStore();
   const { resolvedTheme } = useThemeStore();
@@ -217,8 +220,41 @@ export default function Dashboard() {
     return (user?.role === 'User' || user?.role === 'Client User') ? tickets.filter(t => t.creatorId === user?.id || t.user === user?.name) : tickets;
   }, [tickets, user]);
 
-  const openTickets = dashboardTickets.filter(t => t.status === 'Open' || t.status === 'On Hold').length;
+  const openTickets = dashboardTickets.filter(t => t.status === 'Open').length;
+  const onHoldTickets = dashboardTickets.filter(t => t.status === 'On Hold').length;
+  const cancelledTickets = dashboardTickets.filter(t => t.status === 'Cancelled').length;
   const resolvedTickets = dashboardTickets.filter(t => t.status === 'Resolved').length;
+
+  // Dynamic priorities distribution
+  const priorityDistribution = React.useMemo(() => {
+    const critical = dashboardTickets.filter(t => ['critical', 'high'].includes(t.priority?.toLowerCase())).length;
+    const medium = dashboardTickets.filter(t => t.priority?.toLowerCase() === 'medium').length;
+    const low = dashboardTickets.filter(t => t.priority?.toLowerCase() === 'low').length;
+    
+    return [
+      { name: 'Critical/High', value: critical, color: '#ef4444' },
+      { name: 'Medium', value: medium, color: '#f59e0b' },
+      { name: 'Low', value: low, color: '#10b981' }
+    ].filter(p => p.value > 0);
+  }, [dashboardTickets]);
+
+  const resolutionRate = React.useMemo(() => {
+    return dashboardTickets.length > 0 
+      ? Math.round((resolvedTickets / dashboardTickets.length) * 100) 
+      : 0;
+  }, [resolvedTickets, dashboardTickets]);
+
+  const clientReviews = React.useMemo(() => {
+    return dashboardTickets
+      .filter(t => t.original?.feedback?.rating)
+      .map(t => t.original.feedback.rating);
+  }, [dashboardTickets]);
+
+  const averageRating = React.useMemo(() => {
+    if (clientReviews.length === 0) return '—';
+    const sum = clientReviews.reduce((acc, r) => acc + r, 0);
+    return (sum / clientReviews.length).toFixed(1);
+  }, [clientReviews]);
 
   // Dynamic Weekly Volume Data
   const weeklyData = React.useMemo(() => {
@@ -294,10 +330,47 @@ export default function Dashboard() {
 
       <NoticeBoard notifications={notifications} markAsRead={markAsRead} downloadAttachment={downloadAttachment} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 mb-8 px-1 sm:px-2">
-        <StatCard title="Total Tickets" value={dashboardTickets.length} icon={<Ticket size={24} />} color="blue" delay={0.1} />
-        <StatCard title="Open" value={openTickets} icon={<AlertCircle size={24} />} color="red" delay={0.2} />
-        <StatCard title="Resolved" value={resolvedTickets} icon={<CheckCircle size={24} />} color="green" delay={0.4} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5 sm:gap-6 mb-8 px-1 sm:px-2">
+        <StatCard 
+          title="Total Tickets" 
+          value={dashboardTickets.length} 
+          icon={<Ticket size={24} />} 
+          color="blue" 
+          delay={0.1}
+          onClick={() => navigate('/my-tickets?status=all')}
+        />
+        <StatCard 
+          title="Open" 
+          value={openTickets} 
+          icon={<AlertCircle size={24} />} 
+          color="red" 
+          delay={0.15}
+          onClick={() => navigate('/my-tickets?status=open')}
+        />
+        <StatCard 
+          title="On Hold" 
+          value={onHoldTickets} 
+          icon={<Clock size={24} />} 
+          color="yellow" 
+          delay={0.2}
+          onClick={() => navigate('/my-tickets?status=on hold')}
+        />
+        <StatCard 
+          title="Cancelled" 
+          value={cancelledTickets} 
+          icon={<XCircle size={24} />} 
+          color="gray" 
+          delay={0.25}
+          onClick={() => navigate('/my-tickets?status=cancelled')}
+        />
+        <StatCard 
+          title="Resolved" 
+          value={resolvedTickets} 
+          icon={<CheckCircle size={24} />} 
+          color="green" 
+          delay={0.3}
+          onClick={() => navigate('/my-tickets?status=resolved')}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 px-1 sm:px-2">
@@ -342,6 +415,106 @@ export default function Dashboard() {
         <div className="col-span-1">
             <ActivityTimeline activities={recentActivities} />
         </div>
+      </div>
+
+      {/* New Analytics Row: Priorities & Performance Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 px-1 sm:px-2">
+        {/* Priority breakdown */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45 }}
+          className="bg-[#111620]/80 backdrop-blur-xl p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-between"
+        >
+          <div className="absolute right-0 bottom-0 w-60 h-60 bg-red-500/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div>
+            <h3 className="text-lg font-bold text-white tracking-tight mb-2 flex items-center gap-2">
+              <Award className="text-red-550" size={20} /> Priority Distribution
+            </h3>
+            <p className="text-slate-500 text-xs font-semibold mb-6 uppercase tracking-wider">Severity Breakdown of Submitted Tickets</p>
+          </div>
+
+          {priorityDistribution.length === 0 ? (
+            <div className="text-slate-500 text-sm italic py-12 text-center">No active tickets to analyze distribution.</div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+              <div className="w-40 h-40 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={priorityDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={65}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {priorityDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'rgba(17, 22, 32, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                      itemStyle={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-3.5 w-full">
+                {priorityDistribution.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-xl px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-[13px] font-bold text-slate-300">{item.name}</span>
+                    </div>
+                    <span className="text-sm font-black text-white">{item.value} <span className="text-slate-500 text-xs font-bold">({Math.round((item.value / dashboardTickets.length) * 100)}%)</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </motion.div>
+
+        {/* Performance SLA Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="bg-[#111620]/80 backdrop-blur-xl p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-between"
+        >
+          <div className="absolute left-0 top-0 w-60 h-60 bg-emerald-600/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div>
+            <h3 className="text-lg font-bold text-white tracking-tight mb-2 flex items-center gap-2">
+              <TrendingUp className="text-emerald-500" size={20} /> Operational SLA & Performance
+            </h3>
+            <p className="text-slate-500 text-xs font-semibold mb-6 uppercase tracking-wider">Metrics measuring ticket resolution efficiency</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Resolution Rate</span>
+              <div className="text-2xl font-black text-emerald-400">{resolutionRate}%</div>
+              <p className="text-[10px] text-slate-500 mt-1 font-semibold">Percentage of resolved issues</p>
+            </div>
+            
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Feedback Score</span>
+              <div className="text-2xl font-black text-yellow-400 flex items-center gap-1.5">
+                <Star size={20} className="fill-yellow-400" />
+                {averageRating}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-semibold">Average rating from reviews</p>
+            </div>
+          </div>
+
+          <div className="mt-4 p-4.5 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex items-center justify-between text-xs font-bold text-slate-400">
+            <span>Guaranteed First Response:</span>
+            <span className="text-blue-400 font-black uppercase tracking-wider">&lt; 2 Hours SLA</span>
+          </div>
+        </motion.div>
       </div>
 
       {user?.role !== 'Super Admin' && clientLoading && (

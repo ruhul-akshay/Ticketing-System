@@ -3,7 +3,20 @@ import ClientUser from '../models/ClientUser.js';
 import ConsultantProfile from '../models/ConsultantProfile.js';
 import Client from '../models/Client.js';
 import PreAssignmentRule from '../models/PreAssignmentRule.js';
+import LeaveRequest from '../models/LeaveRequest.js';
 import { generateTicketNumber, isValidObjectId } from '../utils/ticket.helpers.js';
+import Holiday from '../models/Holiday.js';
+
+const checkConsultantOnLeave = async (consultantId) => {
+  const today = new Date();
+  const midnight = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0));
+  const consultant = await ClientUser.findOne({
+    _id: consultantId,
+    leaveFrom: { $lte: midnight },
+    leaveTo: { $gte: midnight }
+  });
+  return !!consultant;
+};
 import {
   sendTicketCreatedEmail,
   sendConsultantTicketAlertEmail,
@@ -23,7 +36,11 @@ export const getTickets = async (currentUser) => {
   }
 
   if (currentUser.role === 'consultant' || currentUser.role === 'admin') {
-    query.assignedTo = currentUser._id;
+    query.$or = [
+      { assignedTo: currentUser._id },
+      { 'assignmentHistory.forwardedBy': currentUser._id },
+      { 'assignmentHistory.forwardedTo': currentUser._id }
+    ];
   }
 
   const tickets = await Ticket.find(query)
@@ -41,10 +58,16 @@ export const getTickets = async (currentUser) => {
     .select('-attachments.data -adminAttachments.data -supportingDocuments.data')
     .sort({ createdAt: -1 });
 
-  return tickets.map(t => ({
-    ...t.toObject(),
-    attachmentCount: t.attachments?.length || 0
-  }));
+  return tickets.map(t => {
+    const tObj = t.toObject();
+    if (currentUser.role === 'clientuser' && tObj.remarks) {
+      tObj.remarks = tObj.remarks.filter(r => !r.isInternal);
+    }
+    return {
+      ...tObj,
+      attachmentCount: t.attachments?.length || 0
+    };
+  });
 };
 
 export const exportTicketsCSV = async (currentUser) => {
@@ -55,7 +78,11 @@ export const exportTicketsCSV = async (currentUser) => {
   }
 
   if (currentUser.role === 'consultant' || currentUser.role === 'admin') {
-    query.assignedTo = currentUser._id;
+    query.$or = [
+      { assignedTo: currentUser._id },
+      { 'assignmentHistory.forwardedBy': currentUser._id },
+      { 'assignmentHistory.forwardedTo': currentUser._id }
+    ];
   }
 
   const tickets = await Ticket.find(query)
@@ -160,11 +187,22 @@ export const getTicketById = async (currentUser, id) => {
     throw new Error('Access denied');
   }
 
-  if ((currentUser.role === 'consultant' || currentUser.role === 'admin') && (!ticket.assignedTo || ticket.assignedTo._id.toString() !== currentUser._id.toString())) {
-    throw new Error('Access denied: You are not assigned to this ticket.');
+  const isAssigned = ticket.assignedTo && ticket.assignedTo._id.toString() === currentUser._id.toString();
+  const isAssociated = ticket.assignmentHistory?.some(h => 
+    (h.forwardedBy && h.forwardedBy.toString() === currentUser._id.toString()) || 
+    (h.forwardedTo && h.forwardedTo.toString() === currentUser._id.toString())
+  );
+
+  if ((currentUser.role === 'consultant' || currentUser.role === 'admin') && !isAssigned && !isAssociated) {
+    throw new Error('Access denied: You are not assigned or associated with this ticket.');
   }
 
-  return ticket;
+  const ticketObj = ticket.toObject();
+  if (currentUser.role === 'clientuser' && ticketObj.remarks) {
+    ticketObj.remarks = ticketObj.remarks.filter(r => !r.isInternal);
+  }
+
+  return ticketObj;
 };
 
 export const createTicket = async (currentUser, data, files = {}) => {
@@ -232,9 +270,15 @@ export const createTicket = async (currentUser, data, files = {}) => {
   let initialRemarks = 'Initially assigned to Super Admin on creation.';
 
   if (matchedRule) {
-    assignedTo = matchedRule.assignedTo;
-    status = 'assigned';
-    initialRemarks = `Pre-assigned automatically by rule: ${matchedRule.name}`;
+    const isCcOnLeave = await checkConsultantOnLeave(matchedRule.assignedTo);
+    if (!isCcOnLeave) {
+      assignedTo = matchedRule.assignedTo;
+      status = 'assigned';
+      initialRemarks = `Pre-assigned automatically by rule: ${matchedRule.name}`;
+    } else {
+      const skippedCc = await ClientUser.findById(matchedRule.assignedTo, 'name');
+      initialRemarks = `Pre-assignment rule '${matchedRule.name}' matched, but consultant ${skippedCc?.name || ''} is currently on approved leave. Re-routed to Super Admin.`;
+    }
   }
 
   const assignmentHistory = assignedTo ? [{
@@ -270,13 +314,40 @@ export const createTicket = async (currentUser, data, files = {}) => {
     { path: 'department' }
   ]);
 
+  // Check if ticket is raised on a holiday or weekend
+  let holidayReason = null;
+  try {
+    const checkDate = new Date(ticket.createdAt || new Date());
+    const startOfDay = new Date(checkDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(checkDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const holidayRecord = await Holiday.findOne({
+      date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (holidayRecord) {
+      holidayReason = holidayRecord.name;
+    } else {
+      const dayOfWeek = checkDate.getDay();
+      if (dayOfWeek === 0) {
+        holidayReason = 'Sunday Weekend';
+      } else if (dayOfWeek === 6) {
+        holidayReason = 'Saturday Weekend';
+      }
+    }
+  } catch (err) {
+    console.error('Error checking holiday/weekend status for ticket:', err);
+  }
+
   const clientContactEmail = ticket.createdBy?.client?.contactEmail || null;
   // Build CC list: client contact email + any user-specified CC emails
   const ccList = [
     clientContactEmail,
     ...(ticket.ccEmails || [])
   ].filter(Boolean);
-  sendTicketCreatedEmail(ticket.createdBy.email, ticket, ccList.length > 0 ? ccList : null)
+  sendTicketCreatedEmail(ticket.createdBy.email, ticket, ccList.length > 0 ? ccList : null, holidayReason)
       .catch(err => console.error('USER EMAIL ERROR:', err.message));
 
   if (matchedRule) {
@@ -334,8 +405,15 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
     throw new Error('Permission denied');
   }
 
-  if ((reqUserRole === 'consultant' || reqUserRole === 'admin') && String(ticket.assignedTo?._id || ticket.assignedTo) !== String(currentUser._id)) {
-    throw new Error('Access denied: You are not assigned to this ticket.');
+  const isAssigned = ticket.assignedTo && String(ticket.assignedTo?._id || ticket.assignedTo) === String(currentUser._id);
+  const isAssociated = ticket.assignmentHistory?.some(h => 
+    (h.forwardedBy && h.forwardedBy.toString() === currentUser._id.toString()) || 
+    (h.forwardedTo && h.forwardedTo.toString() === currentUser._id.toString())
+  );
+  const isAuthorizedConsultant = (reqUserRole === 'consultant' || reqUserRole === 'admin') && (isAssigned || isAssociated);
+
+  if ((reqUserRole === 'consultant' || reqUserRole === 'admin') && !isAuthorizedConsultant) {
+    throw new Error('Access denied: You are not assigned or associated with this ticket.');
   }
 
   if (reqUserRole === 'clientuser') {
@@ -363,7 +441,8 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
     ticket.remarks.push({
       text: remarks,
       addedBy: currentUser._id,
-      addedAt: new Date()
+      addedAt: new Date(),
+      isInternal: data.isInternal === 'true' || data.isInternal === true
     });
   }
 
@@ -673,8 +752,15 @@ export const updateTicketStatusPatch = async (currentUser, id, { status, solutio
     throw new Error('Ticket not found');
   }
 
-  if ((currentUser.role === 'consultant' || currentUser.role === 'admin') && String(ticket.assignedTo?._id || ticket.assignedTo) !== String(currentUser._id)) {
-    throw new Error('Access denied: You are not assigned to this ticket.');
+  const isAssigned = ticket.assignedTo && String(ticket.assignedTo?._id || ticket.assignedTo) === String(currentUser._id);
+  const isAssociated = ticket.assignmentHistory?.some(h => 
+    (h.forwardedBy && h.forwardedBy.toString() === currentUser._id.toString()) || 
+    (h.forwardedTo && h.forwardedTo.toString() === currentUser._id.toString())
+  );
+  const isAuthorizedConsultant = (currentUser.role === 'consultant' || currentUser.role === 'admin') && (isAssigned || isAssociated);
+
+  if ((currentUser.role === 'consultant' || currentUser.role === 'admin') && !isAuthorizedConsultant) {
+    throw new Error('Access denied: You are not assigned or associated with this ticket.');
   }
 
   const oldStatus = ticket.status;
@@ -762,7 +848,7 @@ export const updateTicketStatusPatch = async (currentUser, id, { status, solutio
   return { ticket, supportWarning };
 };
 
-export const addRemarkOnly = async (currentUser, id, text) => {
+export const addRemarkOnly = async (currentUser, id, text, isInternal = false) => {
   if (!isValidObjectId(id)) {
     throw new Error('Invalid ID');
   }
@@ -775,8 +861,15 @@ export const addRemarkOnly = async (currentUser, id, text) => {
   const reqUserRole = currentUser.role?.toLowerCase() || '';
   const isAdmin = ['consultant', 'clientuser', 'superadmin'].includes(reqUserRole);
 
-  if ((reqUserRole === 'consultant' || reqUserRole === 'admin') && String(ticket.assignedTo?._id || ticket.assignedTo) !== String(currentUser._id)) {
-    throw new Error('Access denied: You are not assigned to this ticket.');
+  const isAssigned = ticket.assignedTo && String(ticket.assignedTo?._id || ticket.assignedTo) === String(currentUser._id);
+  const isAssociated = ticket.assignmentHistory?.some(h => 
+    (h.forwardedBy && h.forwardedBy.toString() === currentUser._id.toString()) || 
+    (h.forwardedTo && h.forwardedTo.toString() === currentUser._id.toString())
+  );
+  const isAuthorizedConsultant = (reqUserRole === 'consultant' || reqUserRole === 'admin') && (isAssigned || isAssociated);
+
+  if ((reqUserRole === 'consultant' || reqUserRole === 'admin') && !isAuthorizedConsultant) {
+    throw new Error('Access denied: You are not assigned or associated with this ticket.');
   }
 
   if (!isAdmin) {
@@ -788,7 +881,8 @@ export const addRemarkOnly = async (currentUser, id, text) => {
 
   ticket.remarks.push({
     text,
-    addedBy: currentUser._id
+    addedBy: currentUser._id,
+    isInternal: isInternal === 'true' || isInternal === true
   });
 
   await ticket.save();
@@ -802,7 +896,7 @@ export const addRemarkOnly = async (currentUser, id, text) => {
   const isSenderAdmin = ['consultant', 'clientuser', 'superadmin'].includes(senderRole);
 
   if (isSenderAdmin) {
-    if (updatedTicket.createdBy?.email) {
+    if (updatedTicket.createdBy?.email && !isInternal) {
       sendNewMessageNotificationEmail(
         updatedTicket.createdBy.email,
         updatedTicket,
@@ -884,6 +978,11 @@ export const assignTicket = async (currentUser, id, consultantId, remarks, ccCon
     throw new Error('Target user is not a Consultant.');
   }
 
+  const targetOnLeave = await checkConsultantOnLeave(consultantId);
+  if (targetOnLeave) {
+    throw new Error('Target consultant is currently on approved leave and cannot be assigned new tickets.');
+  }
+
   ticket.assignedTo = targetConsultant._id;
   ticket.status = 'assigned';
   if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
@@ -952,6 +1051,11 @@ export const forwardTicket = async (currentUser, id, consultantId, remarks, ccCo
   const targetConsultant = await ClientUser.findById(consultantId);
   if (!targetConsultant || !['consultant', 'clientuser', 'superadmin'].includes(targetConsultant.role)) {
     throw new Error('Target user is not a Consultant.');
+  }
+
+  const targetOnLeave = await checkConsultantOnLeave(consultantId);
+  if (targetOnLeave) {
+    throw new Error('Target consultant is currently on approved leave and cannot be assigned new tickets.');
   }
 
   const previousAssignee = ticket.assignedTo;

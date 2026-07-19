@@ -5,6 +5,7 @@ import { useClientStore } from '../../store/useClientStore';
 import { useDepartmentStore } from '../../store/useDepartmentStore';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { usePriorityStore } from '../../store/usePriorityStore';
 import { Input } from '../Input';
 import { Button } from '../Button';
 import api from '../../api/mockAxios';
@@ -14,6 +15,13 @@ export default function CreateTicketConsultantModal({ isOpen, onClose }) {
   const { clients, fetchClients } = useClientStore();
   const { departments, fetchDepartments } = useDepartmentStore();
   const { user } = useAuthStore();
+  const { priorities, fetchPriorities } = usePriorityStore();
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchPriorities();
+    }
+  }, [isOpen, fetchPriorities]);
   const isConsultant = user?.role?.toLowerCase() === 'consultant' || user?.role?.toLowerCase() === 'admin';
 
   const availableDepartments = departments; // Show all departments like superadmin for now to match behavior
@@ -273,7 +281,10 @@ export default function CreateTicketConsultantModal({ isOpen, onClose }) {
                         className="w-full bg-[#1d2633] border border-white/5 text-white rounded-xl px-4 py-3.5 focus:outline-none focus:border-blue-500/50 transition-all font-medium appearance-none shadow-inner"
                         required
                       >
-                        {["Low", "Medium", "High", "Critical"].map(p => <option key={p} value={p}>{p}</option>)}
+                        {priorities.length > 0
+                          ? priorities.map(p => <option key={p.name} value={p.name}>{p.name}</option>)
+                          : ["Low", "Medium", "High", "Critical"].map(p => <option key={p} value={p}>{p}</option>)
+                        }
                       </select>
                     </div>
 

@@ -5,6 +5,7 @@ import ClientUser from './src/models/ClientUser.js';
 import Client from './src/models/Client.js';
 import ConsultantProfile from './src/models/ConsultantProfile.js';
 import Department from './src/models/Department.js';
+import Priority from './src/models/Priority.js';
 
 dotenv.config();
 
@@ -20,7 +21,17 @@ const seedDatabase = async () => {
     await Client.deleteMany({});
     await ConsultantProfile.deleteMany({});
     await Department.deleteMany({});
+    await Priority.deleteMany({});
     console.log('Database cleared.');
+
+    // Seed default priorities
+    console.log('Seeding default priorities...');
+    await Priority.create([
+      { name: 'Low', level: 10, color: '#10b981', description: 'General issues with minor impact.' },
+      { name: 'Medium', level: 30, color: '#3b82f6', description: 'Standard service requests and normal operations.' },
+      { name: 'High', level: 70, color: '#f59e0b', description: 'Urgent issues affecting workflows.' },
+      { name: 'Critical', level: 100, color: '#ef4444', description: 'Severe outages or system breakdown.' }
+    ]);
 
     // Common password hash for all seeded accounts
     const hashedPassword = await bcrypt.hash('123456', 10);
@@ -156,16 +167,16 @@ const seedDatabase = async () => {
     // 4. Seed 10 Client Users (one for each client)
     console.log('Seeding 10 Client Users (one per client)...');
     const clientUsersData = [
-      { name: 'Jane Doe', email: 'jane.doe@acme.com', password: hashedPassword, role: 'clientuser', employeeCode: 'ACME001', phoneNumber: '+1-555-1001', position: 'Finance Manager', client: seededClients[0]._id, clientName: seededClients[0].name },
-      { name: 'John Scorpio', email: 'john.scorpio@globex.com', password: hashedPassword, role: 'clientuser', employeeCode: 'GLOB023', phoneNumber: '+1-555-1002', position: 'Operations Supervisor', client: seededClients[1]._id, clientName: seededClients[1].name },
-      { name: 'Milton Waddams', email: 'milton.waddams@initech.com', password: hashedPassword, role: 'clientuser', employeeCode: 'INIT118', phoneNumber: '+1-555-1003', position: 'Compliance Specialist', client: seededClients[2]._id, clientName: seededClients[2].name },
-      { name: 'Ada Wesker', email: 'ada.wesker@umbrella.com', password: hashedPassword, role: 'clientuser', employeeCode: 'UMBR909', phoneNumber: '+1-555-1004', position: 'HR Director', client: seededClients[3]._id, clientName: seededClients[3].name },
-      { name: 'Happy Hogan', email: 'happy.hogan@stark.com', password: hashedPassword, role: 'clientuser', employeeCode: 'STARK441', phoneNumber: '+1-555-1005', position: 'Logistics Lead', client: seededClients[4]._id, clientName: seededClients[4].name },
-      { name: 'Alfred Pennyworth', email: 'alfred.p@wayne.com', password: hashedPassword, role: 'clientuser', employeeCode: 'WAYN007', phoneNumber: '+1-555-1006', position: 'Facilities Chief', client: seededClients[5]._id, clientName: seededClients[5].name },
-      { name: 'Rachael Rosen', email: 'rachael.r@tyrell.com', password: hashedPassword, role: 'clientuser', employeeCode: 'TYR2049', phoneNumber: '+1-555-1007', position: 'Quality Inspector', client: seededClients[6]._id, clientName: seededClients[6].name },
-      { name: 'Sarah Connor', email: 's.connor@cyberdyne.com', password: hashedPassword, role: 'clientuser', employeeCode: 'CYB1984', phoneNumber: '+1-555-1008', position: 'Security Lead', client: seededClients[7]._id, clientName: seededClients[7].name },
-      { name: 'Bishop Ripley', email: 'bishop.r@weyland.com', password: hashedPassword, role: 'clientuser', employeeCode: 'WEYL2122', phoneNumber: '+1-555-1009', position: 'Project Architect', client: seededClients[8]._id, clientName: seededClients[8].name },
-      { name: 'Richard Hendricks', email: 'richard@hooli.com', password: hashedPassword, role: 'clientuser', employeeCode: 'HOOL010', phoneNumber: '+1-555-1010', position: 'Engineering VP', client: seededClients[9]._id, clientName: seededClients[9].name }
+      { name: 'Jane Doe', email: 'jane.doe@acme.com', password: hashedPassword, role: 'clientuser', employeeCode: 'ACME001', phoneNumber: '+1-555-1001', position: 'Finance Manager', client: seededClients[0]._id, clientName: seededClients[0].name, isPrimaryContact: true },
+      { name: 'John Scorpio', email: 'john.scorpio@globex.com', password: hashedPassword, role: 'clientuser', employeeCode: 'GLOB023', phoneNumber: '+1-555-1002', position: 'Operations Supervisor', client: seededClients[1]._id, clientName: seededClients[1].name, isPrimaryContact: true },
+      { name: 'Milton Waddams', email: 'milton.waddams@initech.com', password: hashedPassword, role: 'clientuser', employeeCode: 'INIT118', phoneNumber: '+1-555-1003', position: 'Compliance Specialist', client: seededClients[2]._id, clientName: seededClients[2].name, isPrimaryContact: true },
+      { name: 'Ada Wesker', email: 'ada.wesker@umbrella.com', password: hashedPassword, role: 'clientuser', employeeCode: 'UMBR909', phoneNumber: '+1-555-1004', position: 'HR Director', client: seededClients[3]._id, clientName: seededClients[3].name, isPrimaryContact: true },
+      { name: 'Happy Hogan', email: 'happy.hogan@stark.com', password: hashedPassword, role: 'clientuser', employeeCode: 'STARK441', phoneNumber: '+1-555-1005', position: 'Logistics Lead', client: seededClients[4]._id, clientName: seededClients[4].name, isPrimaryContact: true },
+      { name: 'Alfred Pennyworth', email: 'alfred.p@wayne.com', password: hashedPassword, role: 'clientuser', employeeCode: 'WAYN007', phoneNumber: '+1-555-1006', position: 'Facilities Chief', client: seededClients[5]._id, clientName: seededClients[5].name, isPrimaryContact: true },
+      { name: 'Rachael Rosen', email: 'rachael.r@tyrell.com', password: hashedPassword, role: 'clientuser', employeeCode: 'TYR2049', phoneNumber: '+1-555-1007', position: 'Quality Inspector', client: seededClients[6]._id, clientName: seededClients[6].name, isPrimaryContact: true },
+      { name: 'Sarah Connor', email: 's.connor@cyberdyne.com', password: hashedPassword, role: 'clientuser', employeeCode: 'CYB1984', phoneNumber: '+1-555-1008', position: 'Security Lead', client: seededClients[7]._id, clientName: seededClients[7].name, isPrimaryContact: true },
+      { name: 'Bishop Ripley', email: 'bishop.r@weyland.com', password: hashedPassword, role: 'clientuser', employeeCode: 'WEYL2122', phoneNumber: '+1-555-1009', position: 'Project Architect', client: seededClients[8]._id, clientName: seededClients[8].name, isPrimaryContact: true },
+      { name: 'Richard Hendricks', email: 'richard@hooli.com', password: hashedPassword, role: 'clientuser', employeeCode: 'HOOL010', phoneNumber: '+1-555-1010', position: 'Engineering VP', client: seededClients[9]._id, clientName: seededClients[9].name, isPrimaryContact: true }
     ];
 
     const seededClientUsers = await ClientUser.insertMany(clientUsersData);

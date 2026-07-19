@@ -264,6 +264,9 @@ html:not(.dark) {
   .bg-\[\#1e1315\] {
     background-color: rgba(237, 27, 47, 0.08) !important;
   }
+  .bg-\[\#241a12\] {
+    background-color: rgba(245, 158, 11, 0.08) !important;
+  }
   .bg-\[\#1e293b\] {
     background-color: hsla(var(--foreground) / 0.05) !important;
   }
@@ -515,10 +518,10 @@ html:not(.dark) {
     background-color: rgba(0, 0, 0, 0.2) !important;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.08) !important;
+    background-color: rgba(0, 0, 0, 0.25) !important;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(59, 130, 246, 0.3) !important;
+    background-color: rgba(59, 130, 246, 0.5) !important;
   }
 }
 

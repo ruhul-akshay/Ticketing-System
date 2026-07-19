@@ -11,11 +11,21 @@ export default function ManageConsultantModal({ isOpen, mode, consultant, onClos
   
   const [formData, setFormData] = useState({
     name: '', email: '', password: '', confirmPassword: '', employeeCode: '',
-    departmentId: '', phoneNumber: '', position: ''
+    departmentId: '', phoneNumber: '', position: '',
+    leaveFrom: '', leaveTo: '', hourlyCost: '0'
   });
 
   useEffect(() => {
     if (mode === 'edit' && consultant) {
+      const formatDate = (dateVal) => {
+        if (!dateVal) return '';
+        try {
+          return new Date(dateVal).toISOString().split('T')[0];
+        } catch (e) {
+          return '';
+        }
+      };
+
       setFormData({
         name: consultant.name || '',
         email: consultant.email || '',
@@ -24,10 +34,17 @@ export default function ManageConsultantModal({ isOpen, mode, consultant, onClos
         employeeCode: consultant.employeeCode || '',
         departmentId: consultant.department?._id || consultant.departmentId || '',
         phoneNumber: consultant.phoneNumber || '',
-        position: consultant.position || ''
+        position: consultant.position || '',
+        leaveFrom: formatDate(consultant.leaveFrom),
+        leaveTo: formatDate(consultant.leaveTo),
+        hourlyCost: consultant.hourlyCost !== undefined ? String(consultant.hourlyCost) : '0'
       });
     } else if (mode === 'create') {
-      setFormData({ name: '', email: '', password: '', confirmPassword: '', employeeCode: '', departmentId: '', phoneNumber: '', position: '' });
+      setFormData({
+        name: '', email: '', password: '', confirmPassword: '', employeeCode: '',
+        departmentId: '', phoneNumber: '', position: '',
+        leaveFrom: '', leaveTo: '', hourlyCost: '0'
+      });
     }
   }, [mode, consultant]);
 
@@ -47,7 +64,10 @@ export default function ManageConsultantModal({ isOpen, mode, consultant, onClos
     const payload = {
       name: formData.name, email: formData.email,
       employeeCode: formData.employeeCode, departmentId: formData.departmentId,
-      phoneNumber: formData.phoneNumber, position: formData.position
+      phoneNumber: formData.phoneNumber, position: formData.position,
+      leaveFrom: formData.leaveFrom || null,
+      leaveTo: formData.leaveTo || null,
+      hourlyCost: Number(formData.hourlyCost) || 0
     };
     if (formData.password) payload.password = formData.password;
 
@@ -105,7 +125,41 @@ export default function ManageConsultantModal({ isOpen, mode, consultant, onClos
                   {departments.map(d => <option key={d._id || d.id} value={d._id || d.id}>{d.name}</option>)}
                 </select>
               </div>
+              <Input 
+                label="Hourly Cost (INR/hr) *" 
+                type="number" 
+                min="0" 
+                value={formData.hourlyCost} 
+                onChange={e => setFormData(p => ({ ...p, hourlyCost: e.target.value }))} 
+                required 
+              />
             </div>
+
+            {/* Leave Period Section */}
+            {mode === 'edit' && (
+              <div className="border-t border-white/5 pt-6 space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Leave Schedule Settings</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold leading-relaxed">
+                    Mark this consultant as temporarily On Leave. The system will skip auto-assignments and block manual assignments for dates within this window.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Input 
+                    label="Leave From Date" 
+                    type="date" 
+                    value={formData.leaveFrom} 
+                    onChange={e => setFormData(p => ({ ...p, leaveFrom: e.target.value }))} 
+                  />
+                  <Input 
+                    label="Leave To Date" 
+                    type="date" 
+                    value={formData.leaveTo} 
+                    onChange={e => setFormData(p => ({ ...p, leaveTo: e.target.value }))} 
+                  />
+                </div>
+              </div>
+            )}
           </form>
         </div>
 

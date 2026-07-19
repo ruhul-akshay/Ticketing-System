@@ -15,6 +15,7 @@ export default function MyTickets() {
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
   const ticketIdFromUrl = searchParams.get('ticketId');
+  const statusFromUrl = searchParams.get('status');
 
   useEffect(() => {
     if (ticketIdFromUrl && tickets.length > 0) {
@@ -24,6 +25,21 @@ export default function MyTickets() {
       }
     }
   }, [ticketIdFromUrl, tickets]);
+
+  useEffect(() => {
+    if (statusFromUrl) {
+      const formatted = statusFromUrl.split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+      
+      const validStatuses = ['Open', 'On Hold', 'Cancelled', 'Resolved'];
+      if (validStatuses.includes(formatted)) {
+        setFilter(formatted);
+      } else if (statusFromUrl.toLowerCase() === 'all') {
+        setFilter('All');
+      }
+    }
+  }, [statusFromUrl]);
 
   const userTickets = (user?.role === 'User' || user?.role === 'Client User') ? tickets.filter(t => t.creatorId === user?.id || t.creatorId === user?._id || t.user === user?.name) : tickets;
   

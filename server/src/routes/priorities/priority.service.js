@@ -4,7 +4,20 @@ import Priority from '../../models/Priority.js';
    GET ALL
 ========================= */
 export const getAllPriorities = async () => {
-  return await Priority.find({ isActive: true }).sort({ level: 1 });
+  let priorities = await Priority.find({ isActive: true }).sort({ level: 1 });
+  if (priorities.length === 0) {
+    const count = await Priority.countDocuments();
+    if (count === 0) {
+      await Priority.create([
+        { name: 'Low', level: 10, color: '#10b981', description: 'General issues with minor impact.' },
+        { name: 'Medium', level: 30, color: '#3b82f6', description: 'Standard service requests and normal operations.' },
+        { name: 'High', level: 70, color: '#f59e0b', description: 'Urgent issues affecting workflows.' },
+        { name: 'Critical', level: 100, color: '#ef4444', description: 'Severe outages or system breakdown.' }
+      ]);
+      priorities = await Priority.find({ isActive: true }).sort({ level: 1 });
+    }
+  }
+  return priorities;
 };
 
 /* =========================

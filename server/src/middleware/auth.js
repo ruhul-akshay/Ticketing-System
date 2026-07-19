@@ -78,6 +78,14 @@ export const authorize = (...roles) => {
         message: 'You do not have permission to perform this action.'
       });
     }
+
+    // Block non-primary client users from performing manager-level operations
+    if (userRole === 'clientuser' && !req.user.isPrimaryContact) {
+      return res.status(403).json({
+        message: 'Access denied. Only the primary client account can manage the team.'
+      });
+    }
+
     next();
   };
 };

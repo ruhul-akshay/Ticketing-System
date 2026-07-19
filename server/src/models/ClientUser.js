@@ -74,8 +74,22 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isPrimaryContact: {
+    type: Boolean,
+    default: false
+  },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+  leaveFrom: {
+    type: Date
+  },
+  leaveTo: {
+    type: Date
+  },
+  hourlyCost: {
+    type: Number,
+    default: 0
+  },
   preferences: {
     theme: {
       type: String,

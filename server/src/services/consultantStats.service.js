@@ -248,6 +248,7 @@ export const buildConsultantStats = async (consultantUser, filters = {}) => {
       expertise: consultantProfile?.expertise || [],
       phone: consultantProfile?.phone || '',
       employeeId: consultantProfile?.employeeId || '',
+      hourlyCost: consultantUser.hourlyCost || 0
     },
     department: department
       ? {
@@ -266,6 +267,8 @@ export const buildConsultantStats = async (consultantUser, filters = {}) => {
       total: +totalWorkHours.toFixed(1),
       avgResolutionHours,
       byDate: workLogByDate,
+      hourlyCost: consultantUser.hourlyCost || 0,
+      totalCost: +(totalWorkHours * (consultantUser.hourlyCost || 0)).toFixed(2)
     },
     clientBreakdown,
     clientWorkHours,
@@ -286,7 +289,7 @@ export const getMyConsultantStats = async (currentUser, filters = {}) => {
 export const getAllConsultantsStatsSummary = async () => {
   const consultants = await ClientUser.find({ role: 'consultant' })
     .populate('department', 'name')
-    .select('name email employeeCode department createdAt')
+    .select('name email employeeCode department createdAt hourlyCost')
     .lean();
 
   return await Promise.all(
@@ -303,6 +306,10 @@ export const getAllConsultantsStatsSummary = async () => {
         { $group: { _id: null, totalHours: { $sum: '$workLogs.hours' } } },
       ]);
 
+      const totalWorkHours = +(workHoursAgg[0]?.totalHours || 0).toFixed(1);
+      const hourlyCost = consultant.hourlyCost || 0;
+      const totalCost = +(totalWorkHours * hourlyCost).toFixed(2);
+
       return {
         _id: consultant._id,
         name: consultant.name,
@@ -311,7 +318,9 @@ export const getAllConsultantsStatsSummary = async () => {
         department: consultant.department?.name || 'Unassigned',
         joinedAt: consultant.createdAt,
         tickets: { total, resolved, open },
-        totalWorkHours: +(workHoursAgg[0]?.totalHours || 0).toFixed(1),
+        totalWorkHours,
+        hourlyCost,
+        totalCost
       };
     })
   );

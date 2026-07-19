@@ -21,6 +21,10 @@ import ClientUsersManagement from '../features/superadmin/ClientUsersManagement'
 import ConsultantsManagement from '../features/superadmin/ConsultantsManagement';
 import PreAssignmentRules from '../features/superadmin/PreAssignmentRules';
 import SuperAdminSettings from '../features/superadmin/SuperAdminSettings';
+import HolidayMaster from '../features/superadmin/HolidayMaster';
+import PricingSetup from '../features/superadmin/PricingSetup';
+import SystemReports from '../features/superadmin/SystemReports';
+import AttendanceDashboard from '../features/user/AttendanceDashboard';
 
 export const router = createBrowserRouter([
   {
@@ -54,6 +58,10 @@ export const router = createBrowserRouter([
       { path: 'super-admin/notifications', element: <SuperAdminNotifications /> },
       { path: 'super-admin/pre-assignment-rules', element: <PreAssignmentRules /> },
       { path: 'super-admin/settings', element: <SuperAdminSettings /> },
+      { path: 'super-admin/holidays', element: <HolidayMaster /> },
+      { path: 'super-admin/pricing', element: <PricingSetup /> },
+      { path: 'super-admin/reports', element: <SystemReports /> },
+      { path: 'attendance', element: <AttendanceDashboard /> },
     ]
   }
 ]);

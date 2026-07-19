@@ -33,6 +33,15 @@ export default function ConsultantsManagement() {
     return 'Global Level Scope';
   };
 
+  const isOnLeave = (c) => {
+    if (!c.leaveFrom || !c.leaveTo) return false;
+    const today = new Date();
+    const todayMidnight = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)).getTime();
+    const fromTime = new Date(c.leaveFrom).getTime();
+    const toTime = new Date(c.leaveTo).getTime();
+    return todayMidnight >= fromTime && todayMidnight <= toTime;
+  };
+
   const filteredConsultants = consultants.filter(consultant => {
     const term = search.toLowerCase();
     const matchSearch = term === '' || 
@@ -200,6 +209,11 @@ export default function ConsultantsManagement() {
                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase border border-white/10 shadow-sm ${consultant.status==='active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-500'}`}>
                            {consultant.status || 'active'}
                          </span>
+                         {isOnLeave(consultant) && (
+                           <span className="px-2.5 py-0.5 bg-yellow-500/25 text-yellow-400 text-[9px] font-black rounded uppercase tracking-widest border border-yellow-500/30 animate-pulse">
+                             On Leave
+                           </span>
+                         )}
                          <button onClick={() => handleStatusToggle(consultant)} disabled={isCurrent} className="text-[10px] font-bold tracking-widest uppercase text-slate-500 hover:text-red-400 transition-colors disabled:opacity-30">
                            Override Power
                          </button>
@@ -208,6 +222,7 @@ export default function ConsultantsManagement() {
                     <td className="p-5">
                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><Activity size={12}/> Key Gen: {new Date(consultant.createdAt).toLocaleDateString()}</div>
                        <div className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-1">Auth: {consultant.role}</div>
+                       <div className="text-[11px] font-black text-emerald-400 uppercase tracking-widest mb-1">Rate: ₹{consultant.hourlyCost || 0} / hr</div>
                        {consultant.statusReason && <div className="text-[10px] text-red-400/80 italic line-clamp-1 max-w-[150px]">"{consultant.statusReason}"</div>}
                     </td>
                     <td className="p-5">

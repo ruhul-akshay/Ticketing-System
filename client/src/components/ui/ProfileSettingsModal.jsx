@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User, Settings, Key, Mail, Phone, Shield, Building, Tag, Save, AlertCircle, Check, Volume2, VolumeX, RefreshCw, Sun, Moon } from 'lucide-react';
+import { X, User, Settings, Key, Mail, Phone, Shield, Building, Tag, Save, AlertCircle, Check, Volume2, VolumeX, RefreshCw, Sun, Moon, Calendar } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import api from '../../api/mockAxios';
@@ -19,6 +19,10 @@ export default function ProfileSettingsModal({ isOpen, onClose, initialTab = 'pr
   } = useThemeStore();
   
   const [activeTab, setActiveTab] = useState(initialTab);
+  const isConsultant = user?.role === 'Consultant' || user?.role === 'Admin';
+
+  const [leaveFrom, setLeaveFrom] = useState('');
+  const [leaveTo, setLeaveTo] = useState('');
 
   const handleClose = () => {
     cancelPreview();
@@ -54,6 +58,17 @@ export default function ProfileSettingsModal({ isOpen, onClose, initialTab = 'pr
       setPhoneNumber(user.phoneNumber || '');
       setPosition(user.position || '');
       
+      const formatDate = (dateVal) => {
+        if (!dateVal) return '';
+        try {
+          return new Date(dateVal).toISOString().split('T')[0];
+        } catch (e) {
+          return '';
+        }
+      };
+      setLeaveFrom(formatDate(user.leaveFrom));
+      setLeaveTo(formatDate(user.leaveTo));
+      
       const prefs = user.preferences || {};
       setSoundEnabled(prefs.soundEnabled !== false);
       setEmailNotifications(prefs.emailNotifications !== false);
@@ -87,7 +102,13 @@ export default function ProfileSettingsModal({ isOpen, onClose, initialTab = 'pr
 
     if (!name.trim()) return setProfileError('Name is required');
 
-    const success = await updateUserProfile({ name, phoneNumber, position });
+    const success = await updateUserProfile({ 
+      name, 
+      phoneNumber, 
+      position,
+      leaveFrom: leaveFrom || null,
+      leaveTo: leaveTo || null
+    });
     if (success) {
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
@@ -286,6 +307,37 @@ export default function ProfileSettingsModal({ isOpen, onClose, initialTab = 'pr
                       </div>
                     </div>
                   </div>
+
+                  {isConsultant && (
+                    <div className="bg-[#181f2b]/40 border border-white/5 p-4.5 rounded-2xl space-y-4">
+                      <div className="space-y-1">
+                        <h4 className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-1.5"><Calendar size={13} className="text-yellow-500" /> Operational Leave settings</h4>
+                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                          Mark yourself as temporarily On Leave. During this period, the system will not assign you new tickets automatically or manually.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Leave From</label>
+                          <input
+                            type="date"
+                            value={leaveFrom}
+                            onChange={(e) => setLeaveFrom(e.target.value)}
+                            className="bg-black/30 border border-white/5 rounded-xl px-3.5 py-2 text-white text-[13px] focus:outline-none focus:border-red-500/40 shadow-inner w-full"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Leave To</label>
+                          <input
+                            type="date"
+                            value={leaveTo}
+                            onChange={(e) => setLeaveTo(e.target.value)}
+                            className="bg-black/30 border border-white/5 rounded-xl px-3.5 py-2 text-white text-[13px] focus:outline-none focus:border-red-500/40 shadow-inner w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Read-Only Account Metadata */}
                   <div className="bg-[#181f2b]/40 border border-white/5 p-4 rounded-xl space-y-2.5">

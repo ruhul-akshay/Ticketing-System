@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Building2, Users, Ticket, AlertCircle, RefreshCw, Plus, Search, ChevronDown, ChevronUp, Database, FileText, Send, Trash2, Edit2 } from 'lucide-react';
+import { Building2, Users, Ticket, AlertCircle, RefreshCw, Plus, Search, ChevronDown, ChevronUp, Database, FileText, Send, Trash2, Edit2, Mail, Phone, User, Globe } from 'lucide-react';
 import { useClientStore } from '../../store/useClientStore';
 import { Button } from '../../components/Button';
 import Modal from '../../components/ui/Modal';
@@ -54,9 +54,24 @@ export default function ClientsManagement() {
 
   const openEditModal = (c) => {
     setSelectedClient(c);
+    
+    const erp = c.erpDetails 
+      ? JSON.parse(JSON.stringify(c.erpDetails)) 
+      : { erpName: '', sapB1VersionType: '', sapB1VersionAndFP: '', sapLicenseAMC: '', sapSupportAMC: { status: '', fromDate: '', toDate: '' }, sapSupportAMCType: '', sapSupportHourlyCap: '', erpIncidentTypes: [] };
+      
+    if (erp.sapSupportAMC) {
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
+      };
+      erp.sapSupportAMC.fromDate = formatDate(erp.sapSupportAMC.fromDate);
+      erp.sapSupportAMC.toDate = formatDate(erp.sapSupportAMC.toDate);
+    }
+
     setFormData({
       name: c.name || '', domain: c.domain || '', contactPerson: c.contactPerson || '', contactEmail: c.contactEmail || '', contactPhone: c.contactPhone || '',
-      erpDetails: c.erpDetails || { erpName: '', sapB1VersionType: '', sapB1VersionAndFP: '', sapLicenseAMC: '', sapSupportAMC: { status: '', fromDate: '', toDate: '' }, sapSupportAMCType: '', sapSupportHourlyCap: '', erpIncidentTypes: [] }
+      erpDetails: erp
     });
     setModalMode('edit');
   };
@@ -177,14 +192,14 @@ export default function ClientsManagement() {
                ) : filteredClients.map((c, i) => (
                  <React.Fragment key={c.id || c._id}>
                    <motion.tr initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }} className={`border-b border-white/5 hover:bg-white/[0.03] transition-colors group ${c.isNewClient ? 'bg-blue-500/5' : ''}`}>
-                      <td className="p-5">
+                      <td className="p-5 cursor-pointer" onClick={() => { setSelectedClient(c); setModalMode('details'); }}>
                        <div className="flex items-center gap-5">
                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center font-black text-white border border-white/10 shadow-lg relative overflow-hidden group-hover:border-red-500/50 transition-colors">
                             <div className="absolute inset-0 bg-red-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                             <span className="relative z-10 text-xl">{c.name?.charAt(0).toUpperCase()}</span>
                          </div>
                          <div>
-                           <div className="font-black text-[16px] flex items-center gap-2 text-white">
+                           <div className="font-black text-[16px] flex items-center gap-2 text-white group-hover:text-red-400 transition-colors">
                              {c.name}
                              {c.isNewClient && <Badge color="blue" size="sm">NEW</Badge>}
                              {c.erpDetails?.sapSupportAMCType === 'Limited' && (c.erpDetails?.sapSupportHourlyCap || 0) <= 5 && (
@@ -515,6 +530,192 @@ export default function ClientsManagement() {
               <Button type="submit" variant="primary" icon={RefreshCw}>Renew Contract</Button>
             </div>
          </form>
+      </Modal>
+
+      <Modal isOpen={modalMode === 'details'} onClose={() => setModalMode(null)} title={`${selectedClient?.name || 'Client'} Profile & Telemetry`} size="lg">
+         {selectedClient && (
+           <div className="space-y-6 text-slate-700 dark:text-slate-300">
+             {/* Header Card */}
+             <div className="p-6 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl flex items-center gap-5 shadow-lg relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-10 opacity-5 text-slate-400 dark:text-white"><Building2 size={120}/></div>
+               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center font-black text-white text-2xl shadow-lg shrink-0">
+                 {selectedClient.name?.charAt(0).toUpperCase()}
+               </div>
+               <div>
+                 <h3 className="text-xl font-black text-slate-950 dark:text-white flex items-center gap-2">
+                   {selectedClient.name}
+                   {selectedClient.isNewClient && <Badge color="blue" size="sm">NEW</Badge>}
+                 </h3>
+                 <p className="text-sm text-slate-505 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                   <Globe size={14} className="text-slate-500 dark:text-slate-400" /> {selectedClient.domain || 'Unlisted Domain'}
+                 </p>
+               </div>
+             </div>
+
+             {/* Stats Counters */}
+             <div className="grid grid-cols-3 gap-4">
+               <div className="bg-slate-50 dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/5 text-center shadow-inner">
+                 <div className="font-black text-2xl text-slate-850 dark:text-white">{selectedClient.totalUsers || selectedClient.employeeCount || 0}</div>
+                 <div className="text-[10px] font-bold text-slate-550 dark:text-slate-400 uppercase tracking-widest mt-1">Active Users</div>
+               </div>
+               <div className="bg-slate-50 dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/5 text-center shadow-inner">
+                 <div className="font-black text-2xl text-red-550 dark:text-red-400">{selectedClient.pendingTickets || 0}</div>
+                 <div className="text-[10px] font-bold text-slate-555 dark:text-slate-400 uppercase tracking-widest mt-1">Pending Tickets</div>
+               </div>
+               <div className="bg-slate-50 dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/5 text-center shadow-inner">
+                 <div className="font-black text-2xl text-emerald-655 dark:text-emerald-400">{selectedClient.resolvedTickets || 0}</div>
+                 <div className="text-[10px] font-bold text-slate-555 dark:text-slate-400 uppercase tracking-widest mt-1">Resolved Tickets</div>
+               </div>
+             </div>
+
+             {/* Contact Details */}
+             <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6 space-y-4 shadow-sm">
+               <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-widest border-b border-slate-200 dark:border-white/5 pb-3 flex items-center gap-2">
+                 <User size={16} className="text-red-500 dark:text-red-400" /> Primary Contact Person
+               </h4>
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="space-y-1">
+                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Full Name</span>
+                   <div className="font-semibold text-slate-850 dark:text-white">{selectedClient.contactPerson || 'N/A'}</div>
+                 </div>
+                 <div className="space-y-1">
+                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Phone Number</span>
+                   <div className="font-semibold text-slate-850 dark:text-white flex items-center gap-2">
+                     <Phone size={12} className="text-slate-500 dark:text-slate-450" /> {selectedClient.contactPhone || 'N/A'}
+                   </div>
+                 </div>
+                 <div className="space-y-1 sm:col-span-2">
+                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Email Address</span>
+                   <div className="font-semibold text-slate-850 dark:text-white flex items-center gap-2">
+                     <Mail size={12} className="text-slate-500 dark:text-slate-450" /> {selectedClient.contactEmail || 'N/A'}
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             {/* ERP Details */}
+             {selectedClient.erpDetails && (
+               <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6 space-y-4 shadow-sm">
+                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-widest border-b border-slate-200 dark:border-white/5 pb-3 flex items-center gap-2">
+                   <Database size={16} className="text-purple-500 dark:text-purple-400" /> ERP & Schema Metadata
+                 </h4>
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-1">
+                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">ERP Name</span>
+                     <div className="font-semibold text-slate-850 dark:text-white mt-0.5">
+                       <Badge color={selectedClient.erpDetails.erpName==='SAP B1'?'purple':selectedClient.erpDetails.erpName==='CREST'?'blue':'gray'}>{selectedClient.erpDetails.erpName || 'N/A'}</Badge>
+                     </div>
+                   </div>
+                   <div className="space-y-1">
+                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Database Version Type</span>
+                     <div className="font-semibold text-slate-850 dark:text-white">{selectedClient.erpDetails.sapB1VersionType || 'N/A'}</div>
+                   </div>
+                   <div className="space-y-1">
+                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">SAP Version & FP</span>
+                     <div className="font-semibold text-slate-850 dark:text-white">{selectedClient.erpDetails.sapB1VersionAndFP || 'N/A'}</div>
+                   </div>
+                   <div className="space-y-1">
+                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">License Status</span>
+                     <div className="font-semibold text-slate-850 dark:text-white mt-0.5">
+                       <Badge color={selectedClient.erpDetails.sapLicenseAMC === 'Active' ? 'green' : 'red'}>{selectedClient.erpDetails.sapLicenseAMC || 'N/A'}</Badge>
+                     </div>
+                   </div>
+                   {selectedClient.erpDetails.sapSupportAMCType && (
+                     <div className="space-y-1">
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Support AMC Type</span>
+                       <div className="font-semibold text-slate-850 dark:text-white">
+                         {selectedClient.erpDetails.sapSupportAMCType}
+                         {selectedClient.erpDetails.sapSupportAMCType === 'Limited' && ` (Cap: ${selectedClient.erpDetails.sapSupportHourlyCap} hrs)`}
+                       </div>
+                     </div>
+                   )}
+                   {selectedClient.erpDetails.sapSupportAMC?.status && (
+                     <div className="space-y-1">
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Support Contract Status</span>
+                       <div className="font-semibold text-slate-850 dark:text-white mt-0.5">
+                         <Badge color={selectedClient.erpDetails.sapSupportAMC.status === 'Active' ? 'green' : 'red'}>{selectedClient.erpDetails.sapSupportAMC.status}</Badge>
+                       </div>
+                     </div>
+                   )}
+                   {selectedClient.erpDetails.sapSupportAMC?.fromDate && (
+                     <div className="space-y-1">
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Contract Start Date</span>
+                       <div className="font-semibold text-slate-850 dark:text-white">
+                         {new Date(selectedClient.erpDetails.sapSupportAMC.fromDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                       </div>
+                     </div>
+                   )}
+                   {selectedClient.erpDetails.sapSupportAMC?.toDate && (
+                     <div className="space-y-1">
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Contract Expiry Date</span>
+                       <div className="font-semibold text-slate-850 dark:text-white">
+                         {new Date(selectedClient.erpDetails.sapSupportAMC.toDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                       </div>
+                     </div>
+                   )}
+                   {selectedClient.erpDetails.erpIncidentTypes?.length > 0 && (
+                     <div className="col-span-2 space-y-1.5">
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest block">Authorized Incident Data Streams</span>
+                       <div className="flex flex-wrap gap-2 mt-1">
+                         {selectedClient.erpDetails.erpIncidentTypes.map(t => (
+                           <span key={t} className="text-[10px] bg-slate-200/50 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl font-bold uppercase tracking-tight">{t}</span>
+                         ))}
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               </div>
+             )}
+
+             {/* Support Balance Progress */}
+             {selectedClient.erpDetails?.sapSupportAMCType === 'Limited' && selectedClient.erpDetails?.sapSupportHourlyCap > 0 && (
+               <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6 space-y-4 shadow-sm">
+                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-widest border-b border-slate-200 dark:border-white/5 pb-3 flex items-center gap-2">
+                   <AlertCircle size={16} className="text-yellow-500 dark:text-yellow-450" /> Support Balance Resource Usage
+                 </h4>
+                 {(() => {
+                   const totalCap = selectedClient.erpDetails?.sapSupportHourlyCap || 0;
+                   const used = selectedClient.erpDetails?.hoursUsed || 0;
+                   const remaining = Math.max(0, totalCap - used);
+                   const progress = totalCap > 0 ? (remaining / totalCap) * 100 : 0;
+                   const isCritical = remaining <= 5 && totalCap > 0;
+
+                   return (
+                     <div className="space-y-3">
+                       <div className="flex justify-between text-xs items-end">
+                         <div>
+                           <span className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block mb-1">Available Hours</span>
+                           <span className={isCritical ? 'text-red-500 font-black animate-pulse flex items-center gap-2 text-xl' : 'text-slate-850 dark:text-white font-black text-xl'}>
+                             {isCritical && <AlertCircle size={18}/>}
+                             {remaining.toFixed(1)} <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">hrs remaining</span>
+                           </span>
+                         </div>
+                         <div className="text-right">
+                           <span className="text-slate-505 dark:text-slate-450 font-bold uppercase tracking-wider block mb-1">Consumption Rate</span>
+                           <span className="text-slate-800 dark:text-slate-300 font-black text-base">{used.toFixed(1)} / {totalCap} hrs used</span>
+                         </div>
+                       </div>
+                       
+                       {/* Progress Track */}
+                       <div className="h-2.5 w-full bg-slate-200 dark:bg-[#111620] rounded-full overflow-hidden border border-slate-300 dark:border-white/5">
+                         <div 
+                           className={`h-full rounded-full transition-all duration-500 ${isCritical ? 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]'}`}
+                           style={{ width: `${progress}%` }}
+                         />
+                       </div>
+                     </div>
+                   );
+                 })()}
+               </div>
+             )}
+
+             {/* Footer Actions */}
+             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+               <Button variant="ghost" onClick={() => setModalMode(null)}>Close Profile</Button>
+               <Button variant="primary" onClick={() => setModalMode('edit')} icon={Edit2}>Edit Client</Button>
+             </div>
+           </div>
+         )}
       </Modal>
     </div>
   );

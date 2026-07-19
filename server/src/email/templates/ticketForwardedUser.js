@@ -53,7 +53,7 @@ export const sendTicketForwardedUserEmail = async (to, ticket, forwardedBy, forw
     ${detailTable([
       infoRow('Ticket No.', ticket.ticketNumber),
       infoRow('Subject',    ticket.title),
-      infoRow('Department', ticket.department || ticket.departmentName || '-'),
+      infoRow('Department', ticket.department?.name || ticket.department || ticket.departmentName || '-'),
       infoRow('Status',     statusBadge(ticket.status || 'assigned'), true),
     ].join(''))}
 

@@ -43,7 +43,8 @@ const autoProvisionClientUser = async (client, contactEmail) => {
     clientName: client.name,
     role: 'clientuser',
     status: 'active',
-    isFirstLogin: true
+    isFirstLogin: true,
+    isPrimaryContact: true
   });
 
   await newUser.save();

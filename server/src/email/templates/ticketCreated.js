@@ -33,7 +33,7 @@ const BLUE_ACCENT = {
  * @param {object}      ticket  Ticket document (populated)
  * @param {string|null} cc      Optional CC address
  */
-export const sendTicketCreatedEmail = async (to, ticket, cc = null) => {
+export const sendTicketCreatedEmail = async (to, ticket, cc = null, holidayReason = null) => {
   if (!to) return;
 
   /* ── Derived values ──────────────────────────────────────────── */
@@ -84,7 +84,7 @@ export const sendTicketCreatedEmail = async (to, ticket, cc = null) => {
   /* ── Detail table rows ───────────────────────────────────────── */
   const rows = [
     infoRow('Subject',      ticket.title       || ticket.subject || '—'),
-    infoRow('Department',   ticket.department  || '—'),
+    infoRow('Department',   ticket.department?.name || ticket.department || '—'),
     infoRow('Category',     ticket.category    || '—'),
     infoRow('Priority',     priorityBadge(ticket.priority || 'medium')),
     infoRow('Status',       'Open / Pending'),
@@ -135,6 +135,15 @@ export const sendTicketCreatedEmail = async (to, ticket, cc = null) => {
     accountManagerExtra,
   );
 
+  let holidayNotice = '';
+  if (holidayReason) {
+    holidayNotice = alertBox(
+      'warning',
+      `⚠️&nbsp; <strong>Holiday / Weekend Notice</strong><br/>
+       Thank you. Your support ticket has been successfully registered with all the details. However, please note that we are currently closed today due to <strong>${holidayReason}</strong>, so our support team is unable to attend to your request today. We will get back to you as soon as we resume operations.`
+    );
+  }
+
   /* ── Compose body ────────────────────────────────────────────── */
   const body = `
     <p style="font-size:15px;color:#334155;margin:0 0 24px 0;line-height:1.6;">
@@ -143,6 +152,7 @@ export const sendTicketCreatedEmail = async (to, ticket, cc = null) => {
       records.
     </p>
 
+    ${holidayNotice}
     ${hero}
     ${table}
     ${description}

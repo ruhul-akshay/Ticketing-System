@@ -1,10 +1,115 @@
 import React, { useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown } from 'lucide-react';
+import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock } from 'lucide-react';
 import api from '../../api/mockAxios';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useConsultantStore } from '../../store/useConsultantStore';
+import * as XLSX from 'xlsx';
+
+const formatHoursToHM = (hoursVal) => {
+  const totalMinutes = Math.round(Number(hoursVal || 0) * 60);
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (hrs > 0 && mins > 0) {
+    return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} and ${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+  }
+  if (hrs > 0) {
+    return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
+  }
+  if (mins > 0) {
+    return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+  }
+  return '0 hours';
+};
+
+const parseCSV = (text) => {
+  if (!text) return [];
+  const lines = [];
+  let row = [""];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i+1];
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        row[row.length - 1] += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push("");
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && next === '\n') {
+        i++;
+      }
+      lines.push(row);
+      row = [""];
+    } else {
+      row[row.length - 1] += char;
+    }
+  }
+  if (row.length > 1 || row[0] !== "") {
+    lines.push(row);
+  }
+  return lines;
+};
+
+const renderCSVTable = (text) => {
+  const rows = parseCSV(text);
+  if (rows.length === 0) return <p className="text-slate-500">Empty CSV file</p>;
+  return (
+    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+      <table className="w-full border-collapse text-[13px]">
+        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+          <tr>
+            {rows[0].map((cell, idx) => (
+              <th key={idx} className="p-4 whitespace-nowrap">{cell}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5 text-slate-300">
+          {rows.slice(1).map((row, rIdx) => (
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+              {row.map((cell, cIdx) => (
+                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const renderExcelTable = (excelData) => {
+  if (!excelData || excelData.length === 0) return <p className="text-slate-500">Empty Excel sheet</p>;
+  return (
+    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+      <table className="w-full border-collapse text-[13px]">
+        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+          <tr>
+            {excelData[0].map((cell, idx) => (
+              <th key={idx} className="p-4 whitespace-nowrap">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5 text-slate-300">
+          {excelData.slice(1).map((row, rIdx) => (
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+              {row.map((cell, cIdx) => (
+                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell !== undefined && cell !== null ? String(cell) : ''}>
+                  {cell !== undefined && cell !== null ? String(cell) : ''}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const getStatusColor = (status) => {
   switch (status) {
@@ -33,6 +138,8 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClo
   const { fetchTickets } = useTicketStore();
   const { user } = useAuthStore();
 
+  const [previewFile, setPreviewFile] = React.useState(null); // { url, filename, mimeType, textContent }
+
   // Auto-open feedback form for resolved tickets without a rating (for the ticket owner)
   const [showFeedbackForm, setShowFeedbackForm] = React.useState(false);
   const [rating, setRating] = React.useState(0);
@@ -57,13 +164,15 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClo
 
   const [activeConsoleTab, setActiveConsoleTab] = React.useState('assign'); // 'assign' | 'forward' | 'status' | 'worklog'
   const [solutionText, setSolutionText] = React.useState('');
-  const [workLogHours, setWorkLogHours] = React.useState('');
+  const [workLogHoursInput, setWorkLogHoursInput] = React.useState('');
+  const [workLogMinutesInput, setWorkLogMinutesInput] = React.useState('');
   const [workLogDate, setWorkLogDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [statusInput, setStatusInput] = React.useState('');
 
   // Conversation input state
   const [replyText, setReplyText] = React.useState('');
   const [replyFiles, setReplyFiles] = React.useState([]);
+  const [isInternal, setIsInternal] = React.useState(false);
   const replyFileRef = useRef(null);
 
   const ticket = liveTicket || {};
@@ -216,9 +325,10 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
 
     setIsSubmitting(true);
     try {
-      await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, null, [], [], files);
+      await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, null, [], [], files, isInternal);
       setReplyText('');
       setReplyFiles([]);
+      setIsInternal(false);
       if (replyFileRef.current) replyFileRef.current.value = '';
       await fetchTickets();
     } catch (err) {
@@ -244,17 +354,22 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
   };
 
   const handleAddWorkLogHours = async () => {
-    const hours = Number(workLogHours);
-    if (isNaN(hours) || hours <= 0) return alert('Please enter a valid number of hours.');
+    const hrsVal = Number(workLogHoursInput || 0);
+    const minsVal = Number(workLogMinutesInput || 0);
+    if (hrsVal < 0 || minsVal < 0 || (hrsVal === 0 && minsVal === 0)) {
+      return alert('Please enter a valid amount of time.');
+    }
+    const hours = hrsVal + (minsVal / 60);
     setIsSubmitting(true);
     try {
       const logs = [{ date: workLogDate, hours }];
       await updateTicketStatus(ticket.id, ticket.status, null, null, logs);
-      setWorkLogHours('');
-      alert('Effort hours logged successfully!');
+      setWorkLogHoursInput('');
+      setWorkLogMinutesInput('');
+      alert('Effort logged successfully!');
       await fetchTickets();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to log effort hours.');
+      alert(err.response?.data?.message || 'Failed to log effort.');
     } finally {
       setIsSubmitting(false);
     }
@@ -299,6 +414,42 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
     } catch (err) {
       console.error('Error downloading file:', err);
       alert('Failed to download file'); 
+    }
+  };
+
+  const handleViewAttachment = async (e, ticketId, attachmentId, filename, mimeType) => {
+    e.stopPropagation(); e.preventDefault();
+    try {
+      const token = sessionStorage.getItem('token');
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${ticketId}/view/${attachmentId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!response.ok) throw new Error('Failed to load file preview');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      let textContent = '';
+      let excelData = null;
+      
+      const fileLower = filename.toLowerCase();
+      const isExcel = fileLower.endsWith('.xlsx') || fileLower.endsWith('.xls') || 
+                      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+                      mimeType === 'application/vnd.ms-excel';
+      const isCSV = fileLower.endsWith('.csv') || mimeType === 'text/csv';
+      
+      if (isExcel) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        excelData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      } else if (isCSV || mimeType?.startsWith('text/') || fileLower.endsWith('.json') || fileLower.endsWith('.txt')) {
+        textContent = await blob.text();
+      }
+      
+      setPreviewFile({ url, filename, mimeType, textContent, excelData });
+    } catch (err) {
+      console.error('Preview error:', err);
+      alert('Failed to view file');
     }
   };
 
@@ -391,8 +542,8 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                 </span>
               </div>
               <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-emerald-400" /> Effort Hours</span>
-                <span className="text-[14px] font-black text-emerald-400 tracking-wide">{grandTotalHours.toFixed(1)} hrs</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-emerald-400" /> Effort Logging</span>
+                <span className="text-[13px] font-black text-emerald-400 tracking-wide">{formatHoursToHM(grandTotalHours)}</span>
               </div>
               <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={13} /> Dept</span>
@@ -449,13 +600,22 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         </div>
                         <span className="text-[14px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
                       </div>
-                      <button 
-                        onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                        className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors border border-white/5 shrink-0"
-                        title="Download Attachment"
-                      >
-                        <Download size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button 
+                          onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors border border-white/5 cursor-pointer"
+                          title="View Attachment"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors border border-white/5 cursor-pointer"
+                          title="Download Attachment"
+                        >
+                          <Download size={16} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -475,13 +635,22 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         </div>
                         <span className="text-[14px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
                       </div>
-                      <button 
-                        onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                        className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 shrink-0"
-                        title="Download Consultant Attachment"
-                      >
-                        <Download size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button 
+                          onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer"
+                          title="View Consultant Attachment"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer"
+                          title="Download Consultant Attachment"
+                        >
+                          <Download size={16} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -505,13 +674,22 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         </div>
                         <span className="text-[14px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
                       </div>
-                      <button 
-                        onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                        className="p-2 bg-white/5 hover:bg-white/10 text-purple-400 hover:text-white rounded-lg transition-colors border border-purple-500/20 shrink-0"
-                        title="Download Supporting Document"
-                      >
-                        <Download size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button 
+                          onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-purple-400 hover:text-white rounded-lg transition-colors border border-purple-500/20 cursor-pointer"
+                          title="View Supporting Document"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-purple-400 hover:text-white rounded-lg transition-colors border border-purple-500/20 cursor-pointer"
+                          title="Download Supporting Document"
+                        >
+                          <Download size={16} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -905,23 +1083,39 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                     <div className="space-y-4">
                       <div>
                         <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Log Support Effort
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Effort Logging
                         </h4>
                         <p className="text-[10px] text-slate-500 font-medium">Record work hours directly to accumulate on client's AMC contract balance.</p>
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Effort Time (Hours)</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0.1"
-                            placeholder="e.g. 1.5, 2.0"
-                            value={workLogHours}
-                            onChange={(e) => setWorkLogHours(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-4 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full"
-                          />
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Effort Time</label>
+                          <div className="flex gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="Hours"
+                                value={workLogHoursInput}
+                                onChange={(e) => setWorkLogHoursInput(e.target.value)}
+                                className="bg-[#181f2b] border border-white/5 rounded-xl pl-4 pr-10 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">hrs</span>
+                            </div>
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                placeholder="Minutes"
+                                value={workLogMinutesInput}
+                                onChange={(e) => setWorkLogMinutesInput(e.target.value)}
+                                className="bg-[#181f2b] border border-white/5 rounded-xl pl-4 pr-10 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">mins</span>
+                            </div>
+                          </div>
                         </div>
                         
                         <div className="flex flex-col gap-1.5">
@@ -939,10 +1133,10 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         <button
                           type="button"
                           onClick={handleAddWorkLogHours}
-                          disabled={isSubmitting || !workLogHours}
+                          disabled={isSubmitting || (!workLogHoursInput && !workLogMinutesInput)}
                           className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/10 disabled:opacity-50 transition-all cursor-pointer"
                         >
-                          {isSubmitting ? 'Logging...' : 'Commit Effort Hours'}
+                          {isSubmitting ? 'Logging...' : 'Commit Effort'}
                         </button>
                       </div>
                     </div>
@@ -986,9 +1180,11 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                           {/* Chat Header */}
                           <div className={`flex items-center gap-3 mb-2 px-2.5 ${flexDir}`}>
                             <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-black shadow-lg transition-transform hover:rotate-12 select-none ${
-                              isAdmin 
-                                ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-4 ring-emerald-500/10' 
-                                : 'bg-gradient-to-br from-red-500 to-[#ED1B2F] text-white ring-4 ring-red-500/10'
+                              remark.isInternal
+                                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white ring-4 ring-amber-500/10'
+                                : isAdmin 
+                                  ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-4 ring-emerald-500/10' 
+                                  : 'bg-gradient-to-br from-red-500 to-[#ED1B2F] text-white ring-4 ring-red-500/10'
                             }`}>
                               {senderName[0].toUpperCase()}
                             </div>
@@ -998,12 +1194,15 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                 <span className="text-[11px] font-black text-slate-350">
                                   {isMe ? 'Me' : senderName}
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider ${
-                                  isAdmin 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                    : 'bg-red-500/10 text-[#ED1B2F] border border-red-500/20'
+                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                                  remark.isInternal
+                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                    : isAdmin 
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                      : 'bg-red-500/10 text-[#ED1B2F] border border-red-500/20'
                                 }`}>
-                                  {isAdmin ? 'Support' : 'Client'}
+                                  {remark.isInternal && <Lock size={8} />}
+                                  {remark.isInternal ? 'Internal Collaboration' : isAdmin ? 'Support' : 'Client'}
                                 </span>
                               </div>
                               <span className="text-[9px] text-slate-500 font-semibold mt-0.5">
@@ -1014,13 +1213,17 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
 
                           {/* Message Bubble */}
                           <div className={`group relative p-5 rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl/20 ${roundedCorner} ${
-                            isMe
-                              ? isAdmin
-                                ? 'bg-gradient-to-br from-emerald-600/90 to-teal-700/90 border-emerald-500/30 text-white shadow-emerald-900/20'
-                                : 'bg-gradient-to-br from-red-600/90 to-[#ED1B2F]/90 border-red-500/30 text-white shadow-red-900/20'
-                              : isAdmin
-                                ? 'bg-[#121c24] border-white/5 border-l-4 border-l-emerald-500 text-slate-200 shadow-black/40'
-                                : 'bg-[#1e1315] border-white/5 border-l-4 border-l-[#ED1B2F] text-slate-200 shadow-black/40'
+                            remark.isInternal
+                              ? isMe
+                                ? 'bg-gradient-to-br from-amber-600/90 to-orange-700/90 border-amber-500/30 text-white shadow-amber-900/20'
+                                : 'bg-[#241a12] border-white/5 border-l-4 border-l-amber-500 text-slate-200 shadow-black/40'
+                              : isMe
+                                ? isAdmin
+                                  ? 'bg-gradient-to-br from-emerald-600/90 to-teal-700/90 border-emerald-500/30 text-white shadow-emerald-900/20'
+                                  : 'bg-gradient-to-br from-red-600/90 to-[#ED1B2F]/90 border-red-500/30 text-white shadow-red-900/20'
+                                : isAdmin
+                                  ? 'bg-[#121c24] border-white/5 border-l-4 border-l-emerald-500 text-slate-200 shadow-black/40'
+                                  : 'bg-[#1e1315] border-white/5 border-l-4 border-l-[#ED1B2F] text-slate-200 shadow-black/40'
                           }`}>
                             <p className="text-[14px] leading-relaxed whitespace-pre-wrap font-medium tracking-tight selection:bg-white/20 select-text">{remark.text}</p>
                             
@@ -1028,16 +1231,15 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             {remark.attachments?.length > 0 && (
                               <div className={`mt-4 pt-4 border-t space-y-2.5 ${isMe ? 'border-white/20' : 'border-white/5'}`}>
                                 {remark.attachments.map((file, fIdx) => (
-                                  <button 
+                                  <div 
                                     key={fIdx}
-                                    onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                    className={`flex items-center gap-3.5 p-3 rounded-xl border transition-all w-full text-left group/file overflow-hidden relative ${
+                                    className={`flex items-center gap-3.5 p-3 rounded-xl border transition-all w-full text-left overflow-hidden relative ${
                                       isMe 
                                         ? 'bg-white/10 border-white/10 hover:bg-white/15' 
                                         : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.06]'
                                     }`}
                                   >
-                                    <div className={`p-2.5 rounded-lg transition-all duration-300 group-hover/file:scale-110 group-hover/file:rotate-6 ${
+                                    <div className={`p-2.5 rounded-lg transition-all duration-300 ${
                                       isMe ? 'bg-white/10 text-white' : isAdmin ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-[#ED1B2F]'
                                     }`}>
                                       <File size={16} strokeWidth={2.5} />
@@ -1050,10 +1252,31 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                          <span className={`text-[8px] font-extrabold tracking-wider uppercase ${isMe ? 'text-white/80' : isAdmin ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Secure Attachment</span>
                                       </div>
                                     </div>
-                                    <div className="p-2 bg-white/5 rounded-lg text-slate-400 group-hover/file:text-white transition-colors">
-                                      <Download size={14} />
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <button 
+                                        onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                                        className={`p-2 rounded-lg border transition-all ${
+                                          isMe 
+                                            ? 'bg-white/5 hover:bg-white/25 border-white/10 text-white' 
+                                            : 'bg-white/5 hover:bg-white/15 border-white/5 text-slate-400 hover:text-white'
+                                        } cursor-pointer`}
+                                        title="View File"
+                                      >
+                                        <Eye size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                                        className={`p-2 rounded-lg border transition-all ${
+                                          isMe 
+                                            ? 'bg-white/5 hover:bg-white/25 border-white/10 text-white' 
+                                            : 'bg-white/5 hover:bg-white/15 border-white/5 text-slate-400 hover:text-white'
+                                        } cursor-pointer`}
+                                        title="Download File"
+                                      >
+                                        <Download size={14} />
+                                      </button>
                                     </div>
-                                  </button>
+                                  </div>
                                 ))}
                               </div>
                             )}
@@ -1068,13 +1291,33 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               {/* Conversation Reply Input — visible for all non-Resolved tickets */}
               {ticket.status !== 'Resolved' && (
                 <div className="relative group">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-red-600 to-[#ED1B2F] rounded-[2rem] blur opacity-5 group-focus-within:opacity-20 transition duration-1000"></div>
+                  <div className={`absolute -inset-1 rounded-[2rem] blur opacity-5 group-focus-within:opacity-20 transition duration-1000 ${isInternal ? 'bg-gradient-to-r from-amber-600 to-orange-600' : 'bg-gradient-to-r from-red-600 to-[#ED1B2F]'}`}></div>
                   <div className="relative">
+                    {['consultant', 'admin', 'superadmin'].includes(user?.role?.toLowerCase()) && (
+                      <div className="flex justify-end mb-2 mr-2">
+                        <label className="flex items-center gap-2 text-[10px] font-extrabold text-slate-500 hover:text-amber-500 cursor-pointer select-none uppercase tracking-wider transition-colors">
+                          <input 
+                            type="checkbox" 
+                            checked={isInternal} 
+                            onChange={(e) => setIsInternal(e.target.checked)}
+                            className="rounded bg-[#111620] border-white/20 text-amber-500 focus:ring-amber-500" 
+                          />
+                          <span className="flex items-center gap-1">
+                            <Lock size={10} />
+                            Internal Note (Hidden from Client)
+                          </span>
+                        </label>
+                      </div>
+                    )}
                     <textarea 
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Type your message here..."
-                      className="w-full bg-[#131924] border border-white/10 rounded-[2rem] p-5 text-[14px] text-white focus:outline-none focus:border-red-500/40 transition-all resize-none h-28 shadow-2xl pr-28 scrollbar-none font-medium placeholder:text-slate-650"
+                      placeholder={isInternal ? "Type internal collaborative note (only visible to support team)..." : "Type your message here..."}
+                      className={`w-full bg-[#131924] border rounded-[2rem] p-5 text-[14px] text-white focus:outline-none transition-all resize-none h-28 shadow-2xl pr-28 scrollbar-none font-medium placeholder:text-slate-650 ${
+                        isInternal 
+                          ? 'border-amber-500/30 focus:border-amber-500/60' 
+                          : 'border-white/10 focus:border-red-500/40'
+                      }`}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
@@ -1091,7 +1334,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                          onChange={(e) => setReplyFiles(Array.from(e.target.files || []))}
                        />
                        {replyFiles.length > 0 && (
-                         <span className="text-[9px] font-black text-[#ED1B2F] uppercase tracking-widest animate-pulse mr-1">
+                         <span className={`text-[9px] font-black uppercase tracking-widest animate-pulse mr-1 ${isInternal ? 'text-amber-500' : 'text-[#ED1B2F]'}`}>
                            {replyFiles.length} FILES
                          </span>
                        )}
@@ -1105,7 +1348,11 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                        <button 
                         onClick={handleSendRemark}
                         disabled={isSubmitting || (!replyText.trim() && replyFiles.length === 0)}
-                        className="p-3 bg-gradient-to-r from-red-600 to-[#ED1B2F] hover:from-red-500 hover:to-red-400 text-white rounded-2xl transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 cursor-pointer"
+                        className={`p-3 rounded-2xl transition-all shadow-lg disabled:opacity-50 cursor-pointer ${
+                          isInternal
+                            ? 'bg-gradient-to-r from-amber-600 to-orange-655 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-600/20'
+                            : 'bg-gradient-to-r from-red-600 to-[#ED1B2F] hover:from-red-500 hover:to-red-400 text-white shadow-red-600/20'
+                        }`}
                       >
                         <Send size={18} />
                       </button>
@@ -1207,6 +1454,99 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
         </motion.div>
       </div>
       ) : null}
+
+      {/* Inline File Preview Modal */}
+      {previewFile && (
+        <>
+          <div
+            onClick={() => {
+              window.URL.revokeObjectURL(previewFile.url);
+              setPreviewFile(null);
+            }}
+            className="fixed inset-0 bg-[#020617]/90 backdrop-blur-2xl z-[90]"
+          />
+          <div
+            className="fixed inset-4 sm:inset-10 md:inset-20 z-[100] flex flex-col bg-[#0f172a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden font-sans"
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-white/5 bg-[#1e293b]/50 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <File size={20} className="text-blue-400" />
+                <span className="text-[14px] font-black text-white truncate max-w-xs sm:max-w-md uppercase tracking-wider">{previewFile.filename}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = previewFile.url;
+                    a.download = previewFile.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
+                  className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
+                  title="Download File"
+                >
+                  <Download size={18} />
+                </button>
+                <button
+                  onClick={() => {
+                    window.URL.revokeObjectURL(previewFile.url);
+                    setPreviewFile(null);
+                  }}
+                  className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-500 rounded-xl transition-all border border-white/5 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-6 flex items-center justify-center bg-slate-950/20">
+              {previewFile.mimeType?.startsWith('image/') ? (
+                <img
+                  src={previewFile.url}
+                  alt={previewFile.filename}
+                  className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
+                />
+              ) : previewFile.mimeType === 'application/pdf' ? (
+                <iframe
+                  src={previewFile.url}
+                  className="w-full h-full min-h-[60vh] rounded-2xl border border-white/5 bg-white"
+                  title={previewFile.filename}
+                />
+              ) : previewFile.excelData ? (
+                renderExcelTable(previewFile.excelData)
+              ) : previewFile.filename?.toLowerCase()?.endsWith('.csv') ? (
+                renderCSVTable(previewFile.textContent)
+              ) : previewFile.textContent ? (
+                <pre className="w-full max-w-4xl text-left bg-slate-900 text-slate-350 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
+                  {previewFile.textContent}
+                </pre>
+              ) : (
+                <div className="text-center p-12 bg-white/[0.02] border border-white/5 rounded-3xl max-w-md">
+                  <File size={48} className="text-slate-655 mx-auto mb-4 opacity-50" />
+                  <p className="text-[13px] font-black text-slate-400 uppercase tracking-widest mb-4">Inline Preview Unavailable</p>
+                  <p className="text-[11px] text-slate-500 font-medium mb-6">This file type ({previewFile.mimeType || 'unknown'}) cannot be displayed inline.</p>
+                  <button
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = previewFile.url;
+                      a.download = previewFile.filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg cursor-pointer"
+                  >
+                    Download to View
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </AnimatePresence>
   );
 }

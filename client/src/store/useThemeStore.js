@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import api from '../api/mockAxios';
 
 const primaryConfigs = {
   indigo: {
@@ -153,10 +154,28 @@ export const useThemeStore = create((set, get) => {
       get().applyCurrentStyles();
     },
 
-    setTheme: (t) => {
+    setTheme: async (t) => {
       localStorage.setItem('theme', t);
       set({ theme: t, previewTheme: t });
       get().applyCurrentStyles();
+
+      // Persist preferences to DB if user is logged in
+      try {
+        const storedUser = sessionStorage.getItem('user');
+        if (storedUser) {
+          const userObj = JSON.parse(storedUser);
+          const userId = userObj?._id;
+          if (userId) {
+            await api.put(`/client-users/${userId}`, {
+              preferences: { theme: t }
+            });
+            userObj.preferences = { ...userObj.preferences, theme: t };
+            sessionStorage.setItem('user', JSON.stringify(userObj));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync theme preference to backend:', err);
+      }
     },
 
     toggleTheme: () => {
@@ -180,7 +199,7 @@ export const useThemeStore = create((set, get) => {
       get().applyCurrentStyles();
     },
 
-    savePreferences: () => {
+    savePreferences: async () => {
       const t = get().previewTheme;
       const p = get().previewPrimaryColor;
       const a = get().previewAccentColor;
@@ -194,6 +213,33 @@ export const useThemeStore = create((set, get) => {
         primaryColor: p,
         accentColor: a
       });
+
+      // Persist preferences to DB if user is logged in
+      try {
+        const storedUser = sessionStorage.getItem('user');
+        if (storedUser) {
+          const userObj = JSON.parse(storedUser);
+          const userId = userObj?._id;
+          if (userId) {
+            await api.put(`/client-users/${userId}`, {
+              preferences: {
+                theme: t,
+                primaryColor: p,
+                accentColor: a
+              }
+            });
+            userObj.preferences = {
+              ...userObj.preferences,
+              theme: t,
+              primaryColor: p,
+              accentColor: a
+            };
+            sessionStorage.setItem('user', JSON.stringify(userObj));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync settings preferences to backend:', err);
+      }
       get().applyCurrentStyles();
 
       return {

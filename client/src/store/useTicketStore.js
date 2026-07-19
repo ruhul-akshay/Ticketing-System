@@ -77,7 +77,7 @@ export const useTicketStore = create((set) => ({
     }
   },
   
-  updateTicketStatus: async (id, newStatus, reply, solution, workLogs, adminFiles, remarkFiles) => {
+  updateTicketStatus: async (id, newStatus, reply, solution, workLogs, adminFiles, remarkFiles, isInternal = false) => {
     // workLogs is an array of { date, hours } entries
     const newEntries = Array.isArray(workLogs) ? workLogs.filter(r => r.date && r.hours && Number(r.hours) > 0) : [];
 
@@ -102,6 +102,7 @@ export const useTicketStore = create((set) => ({
       if (isFormData) {
         payload = new FormData();
         payload.append('status', apiStatus);
+        payload.append('isInternal', isInternal ? 'true' : 'false');
         
         if (solution && typeof solution === 'string' && solution.trim().length > 0) {
           payload.append('solution', solution);
@@ -140,7 +141,7 @@ export const useTicketStore = create((set) => ({
           tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
         }));
       } else {
-        payload = { status: apiStatus };
+        payload = { status: apiStatus, isInternal };
         if (solution && typeof solution === 'string' && solution.trim().length > 0) {
           payload.solution = solution;
           if (newStatus === 'Resolved') {
