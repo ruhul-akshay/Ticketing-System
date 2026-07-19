@@ -21,26 +21,18 @@ export const uploadsDir = path.join(rootDir, 'uploads');
 const app = express();
 
 // ======================= CORS =======================
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
-  
-  const requestHeaders = req.headers['access-control-request-headers'];
-  if (requestHeaders) {
-    res.setHeader('Access-Control-Allow-Headers', requestHeaders);
-  } else {
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, *');
-  }
-  
-  res.setHeader('Access-Control-Max-Age', '86400');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
-});
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow all origins dynamically (required for credentials: true)
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    maxAge: 86400,
+  })
+);
 
 // ======================= TRUST PROXY =======================
 app.set('trust proxy', 1);
@@ -56,6 +48,7 @@ app.use(
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
+  skip: (req) => req.method === 'OPTIONS',
 });
 app.use(limiter);
 
