@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock, ExternalLink } from 'lucide-react';
 import api from '../../api/mockAxios';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -60,20 +61,20 @@ const renderCSVTable = (text) => {
   const rows = parseCSV(text);
   if (rows.length === 0) return <p className="text-slate-500">Empty CSV file</p>;
   return (
-    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+    <div className="w-full h-full overflow-auto bg-[#111620] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
       <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
           <tr>
             {rows[0].map((cell, idx) => (
-              <th key={idx} className="p-4 whitespace-nowrap">{cell}</th>
+              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5 text-slate-300">
           {rows.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
               {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell}>{cell}</td>
+                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell}>{cell}</td>
               ))}
             </tr>
           ))}
@@ -86,20 +87,20 @@ const renderCSVTable = (text) => {
 const renderExcelTable = (excelData) => {
   if (!excelData || excelData.length === 0) return <p className="text-slate-500">Empty Excel sheet</p>;
   return (
-    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+    <div className="w-full h-full overflow-auto bg-[#111620] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
       <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
           <tr>
             {excelData[0].map((cell, idx) => (
-              <th key={idx} className="p-4 whitespace-nowrap">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
+              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5 text-slate-300">
           {excelData.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
               {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell !== undefined && cell !== null ? String(cell) : ''}>
+                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell !== undefined && cell !== null ? String(cell) : ''}>
                   {cell !== undefined && cell !== null ? String(cell) : ''}
                 </td>
               ))}
@@ -131,12 +132,14 @@ const getPriorityColor = (priority) => {
 };
 
 export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClose }) {
-  const liveTicket = useTicketStore((state) => 
-    state.tickets.find((t) => t.id === (initialTicket?.id || initialTicket?.original?._id)) || initialTicket
-  );
+  const liveTicket = useTicketStore((state) => {
+    const targetId = String(initialTicket?.id || initialTicket?._id || initialTicket?.original?._id || '');
+    return state.tickets.find((t) => String(t.id || t._id || t.original?._id) === targetId) || initialTicket;
+  });
 
   const { fetchTickets } = useTicketStore();
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   const [previewFile, setPreviewFile] = React.useState(null); // { url, filename, mimeType, textContent }
 
@@ -147,7 +150,7 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClo
   const [comment, setComment] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const { consultants, fetchConsultants } = useConsultantStore();
+  const { consultants, fetchConsultants, isLoading: consultantsLoading } = useConsultantStore();
   const { assignTicket, forwardTicket, deleteTicket, updateTicketStatus } = useTicketStore();
   
   const [selectedConsultantId, setSelectedConsultantId] = React.useState('');
@@ -161,6 +164,7 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClo
   const [isForwarding, setIsForwarding] = React.useState(false);
   const [forwardCcConsultantIds, setForwardCcConsultantIds] = React.useState([]);
   const [forwardCcDropdownOpen, setForwardCcDropdownOpen] = React.useState(false);
+  const [forwardCcEmails, setForwardCcEmails] = React.useState('');
 
   const [activeConsoleTab, setActiveConsoleTab] = React.useState('assign'); // 'assign' | 'forward' | 'status' | 'worklog'
   const [solutionText, setSolutionText] = React.useState('');
@@ -253,7 +257,9 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
   const userRoleLower = user?.role?.toLowerCase()?.replace(/\s+/g, '') || '';
   const isCurrentSuperAdmin = userRoleLower === 'superadmin';
   const isCurrentConsultant = userRoleLower === 'consultant' || userRoleLower === 'admin' || isCurrentSuperAdmin;
-  const isOwner = ticket.creatorId && user && (user.role === 'User' || user.role === 'user' || userRoleLower === 'user' || user.role === 'Client User' || userRoleLower === 'clientuser') && (ticket.creatorId === user.id || ticket.creatorId === user._id);
+  const isClientRole = user && (user.role === 'User' || user.role === 'user' || userRoleLower === 'user' || user.role === 'Client User' || userRoleLower === 'clientuser');
+  const isSameClient = isClientRole && user.client && (ticket.createdBy?.client?._id === user.client || ticket.createdBy?.client === user.client || ticket.clientName === user.clientName);
+  const isOwner = ticket.creatorId && user && isClientRole && (ticket.creatorId === user.id || ticket.creatorId === user._id || (user.isPrimaryContact && isSameClient));
   const hasNoFeedback = !ticket.original?.feedback?.rating;
   const isResolved = ticket.status === 'Resolved';
   const rawTicketId = ticket.original?._id || ticket.id;
@@ -276,7 +282,9 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
   // Reset/sync state when the ticket changes or modal opens
   React.useEffect(() => {
     if (isOpen && liveTicket) {
-      const liveIsOwner = (user?.role === 'User' || user?.role === 'user' || user?.role === 'Client User' || user?.role?.toLowerCase() === 'client user' || user?.role?.toLowerCase() === 'clientuser') && (liveTicket.creatorId === user?.id || liveTicket.creatorId === user?._id);
+      const isLiveClientRole = user && (user.role === 'User' || user.role === 'user' || user.role === 'Client User' || user?.role?.toLowerCase() === 'client user' || user?.role?.toLowerCase() === 'clientuser');
+      const isLiveSameClient = isLiveClientRole && user.client && (liveTicket.createdBy?.client?._id === user.client || liveTicket.createdBy?.client === user.client || liveTicket.clientName === user.clientName);
+      const liveIsOwner = isLiveClientRole && (liveTicket.creatorId === user?.id || liveTicket.creatorId === user?._id || (user.isPrimaryContact && isLiveSameClient));
       const liveHasNoFeedback = !liveTicket.original?.feedback?.rating;
       const liveIsResolved = liveTicket.status === 'Resolved';
       setShowFeedbackForm(!!(liveIsOwner && liveIsResolved && liveHasNoFeedback));
@@ -291,7 +299,18 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
       setActiveConsoleTab(isCurrentSuperAdmin ? 'assign' : 'forward');
 
       if (isCurrentConsultant) {
+        // Always fetch (caching prevents redundant network calls)
         fetchConsultants().catch(err => console.error('Error fetching consultants:', err));
+        const ticketId = liveTicket.id || liveTicket._id || liveTicket.original?._id;
+        const openedByList = (liveTicket.openedBy || liveTicket.original?.openedBy || []).map(id => id.toString());
+        const userId = (user?.id || user?._id)?.toString();
+        if (ticketId && userId && !openedByList.includes(userId)) {
+          useTicketStore.getState().markTicketAsOpened(ticketId);
+        }
+      }
+      if (isCurrentSuperAdmin) {
+        // SuperAdmin also needs consultants for assign/forward tabs
+        fetchConsultants().catch(err => console.error('Error fetching consultants (superadmin):', err));
       }
     }
   }, [liveTicket?.id, isOpen, user]);
@@ -502,6 +521,20 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   <span className="hidden sm:inline">Forward</span>
                 </button>
               )}
+              {isCurrentConsultant && (
+                <button
+                  onClick={() => {
+                    const tid = ticket.ticketNumber || ticket.id || ticket._id;
+                    onClose();
+                    navigate(`/consultant/tickets?ticketId=${tid}`);
+                  }}
+                  className="p-2 bg-white/5 hover:bg-violet-500/20 text-slate-400 hover:text-violet-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                  title="Open Full Ticket Panel"
+                >
+                  <ExternalLink size={13} />
+                  <span className="hidden sm:inline">Open Ticket</span>
+                </button>
+              )}
               <button 
                 onClick={handleDownloadTicketDetails}
                 className="p-2 bg-white/5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
@@ -622,37 +655,55 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               )}
             </div>
 
-            {/* Admin Attachments */}
-            {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
+            {/* Final Technical Solution & Knowledge Base Attachments */}
+            {(ticket.original?.solution || ticket.solution || ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
               <div className="relative z-10 mb-8">
-                <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-3">Consultant Attachments</h3>
-                <div className="flex flex-col gap-3">
-                  {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file) => (
-                    <div key={file._id} className="bg-[#1d2633] border border-emerald-500/10 p-4 rounded-xl flex items-center justify-between shadow-inner">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="p-2 bg-emerald-500/10 rounded-lg shrink-0">
-                          <File size={16} className="text-emerald-400" />
-                        </div>
-                        <span className="text-[14px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button 
-                          onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer"
-                          title="View Consultant Attachment"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button 
-                          onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer"
-                          title="Download Consultant Attachment"
-                        >
-                          <Download size={16} />
-                        </button>
+                <h3 className="text-[13px] font-bold text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <CheckCircle size={15} /> Final Technical Solution & Knowledge Base Attachments
+                </h3>
+                <div className="bg-[#1d2633] border border-emerald-500/20 p-6 rounded-2xl space-y-4 shadow-inner">
+                  {(ticket.original?.solution || ticket.solution) ? (
+                    <div className="text-[14px] text-slate-200 leading-relaxed font-semibold whitespace-pre-wrap">
+                      {ticket.original?.solution || ticket.solution}
+                    </div>
+                  ) : (
+                    <p className="text-[13px] text-slate-500 italic">No solution text recorded.</p>
+                  )}
+                  
+                  {/* Knowledge Base Attachments inside Solution */}
+                  {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
+                    <div className="border-t border-white/5 pt-4">
+                      <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Knowledge Base Attachments</h4>
+                      <div className="flex flex-col gap-2">
+                        {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file) => (
+                          <div key={file._id} className="bg-black/25 border border-white/5 p-3 rounded-xl flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="p-2 bg-emerald-500/10 rounded-lg shrink-0">
+                                <File size={14} className="text-emerald-400" />
+                              </div>
+                              <span className="text-[13px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span 
+                                onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                                className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                title="View Attachment"
+                              >
+                                <Eye size={14} />
+                              </span>
+                              <span 
+                                onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                                className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                title="Download Attachment"
+                              >
+                                <Download size={14} />
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             )}
@@ -763,19 +814,19 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             </div>
 
             {/* Super Admin / Consultant Ticket Operations Console */}
-            {isCurrentConsultant && (
-              <div className="relative z-10 mb-8 bg-[#181f2b]/95 p-6 rounded-[2rem] border border-blue-500/20 shadow-xl space-y-6">
-                <h3 className="text-[14px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 border-b border-white/5 pb-3">
+            {isCurrentConsultant && ticket.status !== 'Resolved' && (
+              <div className="relative z-10 mb-8 bg-slate-50 dark:bg-[#181f2b]/95 p-6 rounded-[2rem] border border-slate-200 dark:border-blue-500/20 shadow-xl space-y-6">
+                <h3 className="text-[14px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-2 border-b border-slate-200 dark:border-white/5 pb-3">
                   <Shield size={16} /> {isCurrentSuperAdmin ? 'Super Admin Control Console' : 'Consultant Operations Console'}
                 </h3>
                 
                 {/* Tab controls */}
-                <div className="flex flex-wrap gap-2 bg-[#111620] p-1.5 rounded-2xl border border-white/5">
+                <div className="flex flex-wrap gap-2 bg-slate-200/50 dark:bg-[#111620] p-1.5 rounded-2xl border border-slate-200/60 dark:border-white/5">
                   {isCurrentSuperAdmin && (
                     <button
                       type="button"
                       onClick={() => setActiveConsoleTab('assign')}
-                      className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'assign' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                      className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'assign' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5'}`}
                     >
                       <User size={14} /> Assign
                     </button>
@@ -783,21 +834,21 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   <button
                     type="button"
                     onClick={() => setActiveConsoleTab('forward')}
-                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'forward' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'forward' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5'}`}
                   >
                     <Send size={14} /> Forward
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveConsoleTab('status')}
-                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'status' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'status' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5'}`}
                   >
                     <Settings size={14} /> Status
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveConsoleTab('worklog')}
-                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'worklog' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                    className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeConsoleTab === 'worklog' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5'}`}
                   >
                     <Clock size={14} /> Log Hours
                   </button>
@@ -813,11 +864,11 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                 </div>
 
                 {/* Tab content panel */}
-                <div className="bg-[#111620] p-5 rounded-2xl border border-white/5 min-h-[180px] flex flex-col justify-between">
+                <div className="bg-white dark:bg-[#111620] p-5 rounded-2xl border border-slate-200 dark:border-white/5 min-h-[180px] flex flex-col justify-between shadow-inner">
                   {activeConsoleTab === 'assign' && (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <h4 className="text-[12px] font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span> Manual Assignment
                         </h4>
                         <p className="text-[10px] text-slate-500 font-medium">Assign or update the primary consultant key for this ticket scope.</p>
@@ -825,13 +876,16 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                       
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Select Consultant</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Select Consultant</label>
                           <select
                             value={selectedConsultantId}
                             onChange={(e) => setSelectedConsultantId(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-purple-500/50 shadow-inner cursor-pointer w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-purple-500/50 shadow-inner cursor-pointer w-full disabled:opacity-60"
+                            disabled={consultantsLoading && consultants.length === 0}
                           >
-                            <option value="">-- Choose Consultant --</option>
+                            <option value="">
+                              {consultantsLoading && consultants.length === 0 ? 'Loading consultants...' : '-- Choose Consultant --'}
+                            </option>
                             {consultants.filter(c => c.status === 'active').map(consultant => (
                               <option key={consultant._id || consultant.id} value={consultant._id || consultant.id}>
                                 {consultant.name} ({consultant.email})
@@ -839,12 +893,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             ))}
                           </select>
                         </div>
-
+ 
                         <div className="flex flex-col gap-1.5 relative">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
                           <div 
                             onClick={() => setAssignCcDropdownOpen(!assignCcDropdownOpen)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-850 dark:text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none shadow-inner"
                           >
                             <span className="truncate">
                               {ccConsultantIds.length === 0 
@@ -854,13 +908,13 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             <ChevronDown size={14} className={`text-slate-400 transition-transform ${assignCcDropdownOpen ? 'rotate-180' : ''}`} />
                           </div>
                           {assignCcDropdownOpen && (
-                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-[#1a202c] border border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
+                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-white dark:bg-[#1a202c] border border-slate-200 dark:border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
                               {consultants.filter(c => c.status === 'active' && String(c._id || c.id) !== String(selectedConsultantId)).map(c => {
                                 const isChecked = ccConsultantIds.includes(c._id || c.id);
                                 return (
                                   <label 
                                     key={c._id || c.id} 
-                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 cursor-pointer select-none text-[11px]"
+                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer select-none text-[11px]"
                                   >
                                     <input
                                       type="checkbox"
@@ -870,7 +924,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                       }}
                                       className="rounded text-purple-600 focus:ring-0 cursor-pointer"
                                     />
-                                    <span className="truncate text-slate-200">{c.name}</span>
+                                    <span className="truncate text-slate-700 dark:text-slate-200">{c.name}</span>
                                   </label>
                                 );
                               })}
@@ -879,12 +933,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         </div>
                         
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Directives</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Directives</label>
                           <textarea
                             placeholder="Add assignment instructions..."
                             value={assignRemarks}
                             onChange={(e) => setAssignRemarks(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-purple-500/50 min-h-[50px] resize-none w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl p-3 text-[12px] text-slate-800 dark:text-white focus:outline-none focus:border-purple-500/50 min-h-[50px] resize-none w-full shadow-inner placeholder:text-slate-400"
                           />
                         </div>
                       </div>
@@ -920,7 +974,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   {activeConsoleTab === 'forward' && (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <h4 className="text-[12px] font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Forward Routing
                         </h4>
                         <p className="text-[10px] text-slate-500 font-medium">Forward this ticket payload to another consultant node dynamically.</p>
@@ -928,13 +982,16 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                       
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Target Consultant Node</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Target Consultant Node</label>
                           <select
                             value={selectedForwardConsultantId}
                             onChange={(e) => setSelectedForwardConsultantId(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-amber-500/50 shadow-inner cursor-pointer w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-amber-500/50 shadow-inner cursor-pointer w-full disabled:opacity-60"
+                            disabled={consultantsLoading && consultants.length === 0}
                           >
-                            <option value="">-- Choose Consultant --</option>
+                            <option value="">
+                              {consultantsLoading && consultants.length === 0 ? 'Loading consultants...' : '-- Choose Consultant --'}
+                            </option>
                             {consultants.filter(c => {
                               const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
                               return c.status === 'active' && String(c._id || c.id) !== String(assignedId);
@@ -945,12 +1002,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             ))}
                           </select>
                         </div>
-
+ 
                         <div className="flex flex-col gap-1.5 relative">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">CC Consultants (Optional)</label>
                           <div 
                             onClick={() => setForwardCcDropdownOpen(!forwardCcDropdownOpen)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-850 dark:text-white text-[12px] font-bold flex justify-between items-center cursor-pointer select-none shadow-inner"
                           >
                             <span className="truncate">
                               {forwardCcConsultantIds.length === 0 
@@ -960,7 +1017,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             <ChevronDown size={14} className={`text-slate-400 transition-transform ${forwardCcDropdownOpen ? 'rotate-180' : ''}`} />
                           </div>
                           {forwardCcDropdownOpen && (
-                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-[#1a202c] border border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
+                            <div className="absolute top-[100%] left-0 right-0 mt-1 bg-white dark:bg-[#1a202c] border border-slate-200 dark:border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
                               {consultants.filter(c => {
                                 const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
                                 return c.status === 'active' && 
@@ -971,7 +1028,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                 return (
                                   <label 
                                     key={c._id || c.id} 
-                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/5 cursor-pointer select-none text-[11px]"
+                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer select-none text-[11px]"
                                   >
                                     <input
                                       type="checkbox"
@@ -981,21 +1038,33 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                       }}
                                       className="rounded text-amber-600 focus:ring-0 cursor-pointer"
                                     />
-                                    <span className="truncate text-slate-200">{c.name}</span>
+                                    <span className="truncate text-slate-700 dark:text-slate-200">{c.name}</span>
                                   </label>
                                 );
                               })}
                             </div>
                           )}
                         </div>
+ 
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Additional CC Email Addresses (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. manager@example.com, tech@example.com"
+                            value={forwardCcEmails}
+                            onChange={(e) => setForwardCcEmails(e.target.value)}
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-amber-500/50 w-full placeholder:text-slate-400 shadow-inner"
+                          />
+                          <span className="text-[9px] text-slate-500 font-medium ml-0.5">Separate multiple email addresses with commas.</span>
+                        </div>
                         
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Reason</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Remarks / Reason</label>
                           <textarea
                             placeholder="Add forwarding details..."
                             value={forwardRemarks}
                             onChange={(e) => setForwardRemarks(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-amber-500/50 min-h-[50px] resize-none w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl p-3 text-[12px] text-slate-800 dark:text-white focus:outline-none focus:border-amber-500/50 min-h-[50px] resize-none w-full shadow-inner placeholder:text-slate-400"
                           />
                         </div>
                       </div>
@@ -1007,10 +1076,16 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             if (!selectedForwardConsultantId) return alert('Please select a consultant first.');
                             setIsForwarding(true);
                             try {
-                              await forwardTicket(rawTicketId, selectedForwardConsultantId, forwardRemarks, forwardCcConsultantIds);
+                              const ccs = [...forwardCcConsultantIds];
+                              if (forwardCcEmails.trim()) {
+                                const extraEmails = forwardCcEmails.split(',').map(e => e.trim()).filter(e => e.includes('@'));
+                                ccs.push(...extraEmails);
+                              }
+                              await forwardTicket(rawTicketId, selectedForwardConsultantId, forwardRemarks, ccs);
                               setSelectedForwardConsultantId('');
                               setForwardRemarks('');
                               setForwardCcConsultantIds([]);
+                              setForwardCcEmails('');
                               setForwardCcDropdownOpen(false);
                               alert('Ticket forwarded successfully!');
                             } catch (err) {
@@ -1031,19 +1106,19 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   {activeConsoleTab === 'status' && (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <h4 className="text-[12px] font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span> Lifecycle Status Control
                         </h4>
-                        <p className="text-[10px] text-slate-500 font-medium">Override the ticket status index. Solutions are required for resolved status.</p>
+                        <p className="text-[10px] text-slate-505 font-medium">Override the ticket status index. Solutions are required for resolved status.</p>
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Select State Override</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Select State Override</label>
                           <select
                             value={statusInput}
                             onChange={(e) => setStatusInput(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-3.5 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer w-full"
                           >
                             <option value="Open">Open Protocol</option>
                             <option value="On Hold">On Hold</option>
@@ -1054,12 +1129,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         
                         {statusInput === 'Resolved' && (
                           <div className="flex flex-col gap-1.5 animate-in fade-in duration-300">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Resolution Solution *</label>
+                            <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Resolution Solution *</label>
                             <textarea
                               placeholder="Describe the resolution steps taken..."
                               value={solutionText}
                               onChange={(e) => setSolutionText(e.target.value)}
-                              className="bg-[#181f2b] border border-white/5 rounded-xl p-3 text-[12px] text-white focus:outline-none focus:border-blue-500/50 min-h-[50px] resize-none w-full"
+                              className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl p-3 text-[12px] text-slate-800 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[50px] resize-none w-full shadow-inner placeholder:text-slate-400"
                               required
                             />
                           </div>
@@ -1082,15 +1157,15 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   {activeConsoleTab === 'worklog' && (
                     <div className="space-y-4">
                       <div>
-                        <h4 className="text-[12px] font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <h4 className="text-[12px] font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Effort Logging
                         </h4>
-                        <p className="text-[10px] text-slate-500 font-medium">Record work hours directly to accumulate on client's AMC contract balance.</p>
+                        <p className="text-[10px] text-slate-505 font-medium">Record work hours directly to accumulate on client's AMC contract balance.</p>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Effort Time</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Effort Time</label>
                           <div className="flex gap-2">
                             <div className="relative flex-1">
                               <input
@@ -1099,9 +1174,9 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                 placeholder="Hours"
                                 value={workLogHoursInput}
                                 onChange={(e) => setWorkLogHoursInput(e.target.value)}
-                                className="bg-[#181f2b] border border-white/5 rounded-xl pl-4 pr-10 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right"
+                                className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl pl-3 pr-8 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right placeholder:text-slate-405"
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">hrs</span>
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">hrs</span>
                             </div>
                             <div className="relative flex-1">
                               <input
@@ -1111,20 +1186,20 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                 placeholder="Minutes"
                                 value={workLogMinutesInput}
                                 onChange={(e) => setWorkLogMinutesInput(e.target.value)}
-                                className="bg-[#181f2b] border border-white/5 rounded-xl pl-4 pr-10 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right"
+                                className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl pl-3 pr-8 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full text-right placeholder:text-slate-405"
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">mins</span>
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">mins</span>
                             </div>
                           </div>
                         </div>
                         
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-0.5">Execution Date</label>
+                          <label className="text-[10px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest ml-0.5">Execution Date</label>
                           <input
                             type="date"
                             value={workLogDate}
                             onChange={(e) => setWorkLogDate(e.target.value)}
-                            className="bg-[#181f2b] border border-white/5 rounded-xl px-4 py-2.5 text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full"
+                            className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-emerald-500/50 shadow-inner w-full"
                           />
                         </div>
                       </div>
@@ -1168,11 +1243,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                     const isAdmin = remarkRoleLower === 'consultant' || remarkRoleLower === 'admin' || remarkRoleLower === 'superadmin';
                     const senderName = remark.addedBy?.name || 'System';
                     const isMe = String(remark.addedBy?._id || remark.addedBy) === String(user?._id || user?.id);
-                    
-                    const alignSelf = isMe ? 'justify-end' : 'justify-start';
-                    const itemsAlign = isMe ? 'items-end' : 'items-start';
-                    const flexDir = isMe ? 'flex-row-reverse' : 'flex-row';
-                    const roundedCorner = isMe ? 'rounded-tr-none' : 'rounded-tl-none';
+                    const alignLeft = !isMe || remark.isInternal;
+                    const alignSelf = alignLeft ? 'justify-start' : 'justify-end';
+                    const itemsAlign = alignLeft ? 'items-start' : 'items-end';
+                    const flexDir = alignLeft ? 'flex-row' : 'flex-row-reverse';
+                    const roundedCorner = alignLeft ? 'rounded-tl-none' : 'rounded-tr-none';
+                    const isRightBubble = !alignLeft;
                     
                     return (
                       <div key={index} className={`flex ${alignSelf} w-full animate-in fade-in slide-in-from-bottom-6 duration-500`}>
@@ -1189,8 +1265,8 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                               {senderName[0].toUpperCase()}
                             </div>
                             
-                            <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                              <div className={`flex items-center gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <div className={`flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
+                              <div className={`flex items-center gap-2 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
                                 <span className="text-[11px] font-black text-slate-350">
                                   {isMe ? 'Me' : senderName}
                                 </span>
@@ -1214,9 +1290,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                           {/* Message Bubble */}
                           <div className={`group relative p-5 rounded-2xl shadow-xl border transition-all duration-300 hover:shadow-2xl/20 ${roundedCorner} ${
                             remark.isInternal
-                              ? isMe
-                                ? 'bg-gradient-to-br from-amber-600/90 to-orange-700/90 border-amber-500/30 text-white shadow-amber-900/20'
-                                : 'bg-[#241a12] border-white/5 border-l-4 border-l-amber-500 text-slate-200 shadow-black/40'
+                              ? 'bg-[#241a12] border-white/5 border-l-4 border-l-amber-500 text-slate-200 shadow-black/40'
                               : isMe
                                 ? isAdmin
                                   ? 'bg-gradient-to-br from-emerald-600/90 to-teal-700/90 border-emerald-500/30 text-white shadow-emerald-900/20'
@@ -1229,18 +1303,18 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             
                             {/* Remark Attachments */}
                             {remark.attachments?.length > 0 && (
-                              <div className={`mt-4 pt-4 border-t space-y-2.5 ${isMe ? 'border-white/20' : 'border-white/5'}`}>
+                              <div className={`mt-4 pt-4 border-t space-y-2.5 ${isRightBubble ? 'border-white/20' : 'border-white/5'}`}>
                                 {remark.attachments.map((file, fIdx) => (
                                   <div 
                                     key={fIdx}
                                     className={`flex items-center gap-3.5 p-3 rounded-xl border transition-all w-full text-left overflow-hidden relative ${
-                                      isMe 
+                                      isRightBubble 
                                         ? 'bg-white/10 border-white/10 hover:bg-white/15' 
                                         : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.06]'
                                     }`}
                                   >
                                     <div className={`p-2.5 rounded-lg transition-all duration-300 ${
-                                      isMe ? 'bg-white/10 text-white' : isAdmin ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-[#ED1B2F]'
+                                      isRightBubble ? 'bg-white/10 text-white' : isAdmin ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-[#ED1B2F]'
                                     }`}>
                                       <File size={16} strokeWidth={2.5} />
                                     </div>
@@ -1249,14 +1323,14 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                       <div className="flex items-center gap-1.5 mt-0.5">
                                          <span className="text-[8px] font-bold opacity-60 tracking-wider">{(file.size / 1024).toFixed(1)} KB</span>
                                          <div className="w-1 h-1 bg-white/20 rounded-full" />
-                                         <span className={`text-[8px] font-extrabold tracking-wider uppercase ${isMe ? 'text-white/80' : isAdmin ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Secure Attachment</span>
+                                         <span className={`text-[8px] font-extrabold tracking-wider uppercase ${isRightBubble ? 'text-white/80' : isAdmin ? 'text-emerald-400/80' : 'text-red-400/80'}`}>Secure Attachment</span>
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                       <button 
                                         onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
                                         className={`p-2 rounded-lg border transition-all ${
-                                          isMe 
+                                          isRightBubble 
                                             ? 'bg-white/5 hover:bg-white/25 border-white/10 text-white' 
                                             : 'bg-white/5 hover:bg-white/15 border-white/5 text-slate-400 hover:text-white'
                                         } cursor-pointer`}
@@ -1267,7 +1341,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                       <button 
                                         onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
                                         className={`p-2 rounded-lg border transition-all ${
-                                          isMe 
+                                          isRightBubble 
                                             ? 'bg-white/5 hover:bg-white/25 border-white/10 text-white' 
                                             : 'bg-white/5 hover:bg-white/15 border-white/5 text-slate-400 hover:text-white'
                                         } cursor-pointer`}
@@ -1294,19 +1368,32 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   <div className={`absolute -inset-1 rounded-[2rem] blur opacity-5 group-focus-within:opacity-20 transition duration-1000 ${isInternal ? 'bg-gradient-to-r from-amber-600 to-orange-600' : 'bg-gradient-to-r from-red-600 to-[#ED1B2F]'}`}></div>
                   <div className="relative">
                     {['consultant', 'admin', 'superadmin'].includes(user?.role?.toLowerCase()) && (
-                      <div className="flex justify-end mb-2 mr-2">
-                        <label className="flex items-center gap-2 text-[10px] font-extrabold text-slate-500 hover:text-amber-500 cursor-pointer select-none uppercase tracking-wider transition-colors">
-                          <input 
-                            type="checkbox" 
-                            checked={isInternal} 
-                            onChange={(e) => setIsInternal(e.target.checked)}
-                            className="rounded bg-[#111620] border-white/20 text-amber-500 focus:ring-amber-500" 
-                          />
-                          <span className="flex items-center gap-1">
-                            <Lock size={10} />
-                            Internal Note (Hidden from Client)
-                          </span>
-                        </label>
+                      <div className="flex flex-wrap items-center gap-3 mb-2.5 ml-2">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest select-none">Reply Destination / Visibility</span>
+                        <div className="flex bg-[#181f2b] p-1 rounded-xl border border-white/5 shadow-inner">
+                          <button
+                            type="button"
+                            onClick={() => setIsInternal(false)}
+                            className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                              !isInternal
+                                ? 'bg-gradient-to-r from-red-650 to-[#ED1B2F] text-white shadow-md'
+                                : 'text-slate-500 hover:text-white'
+                            }`}
+                          >
+                            <MessageSquare size={11} /> Public Update
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsInternal(true)}
+                            className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                              isInternal
+                                ? 'bg-amber-500 text-black shadow-md font-bold'
+                                : 'text-slate-500 hover:text-white'
+                            }`}
+                          >
+                            <Lock size={11} /> Internal Note
+                          </button>
+                        </div>
                       </div>
                     )}
                     <textarea 
@@ -1319,7 +1406,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                           : 'border-white/10 focus:border-red-500/40'
                       }`}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                           e.preventDefault();
                           handleSendRemark();
                         }
@@ -1350,11 +1437,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         disabled={isSubmitting || (!replyText.trim() && replyFiles.length === 0)}
                         className={`p-3 rounded-2xl transition-all shadow-lg disabled:opacity-50 cursor-pointer ${
                           isInternal
-                            ? 'bg-gradient-to-r from-amber-600 to-orange-655 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-600/20'
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-amber-600/20'
                             : 'bg-gradient-to-r from-red-600 to-[#ED1B2F] hover:from-red-500 hover:to-red-400 text-white shadow-red-600/20'
                         }`}
+                        title={isInternal ? 'Send Internal Note' : 'Send Message'}
                       >
-                        <Send size={18} />
+                        {isInternal ? <Lock size={18} /> : <Send size={18} />}
                       </button>
                     </div>
                   </div>
@@ -1466,12 +1554,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             className="fixed inset-0 bg-[#020617]/90 backdrop-blur-2xl z-[90]"
           />
           <div
-            className="fixed inset-4 sm:inset-10 md:inset-20 z-[100] flex flex-col bg-[#0f172a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden font-sans"
+            className="fixed inset-4 sm:inset-10 md:inset-16 z-[100] flex flex-col bg-[#111620] border border-white/10 rounded-[2.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden font-sans"
           >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-white/5 bg-[#1e293b]/50 flex justify-between items-center shrink-0">
+            <div className="px-8 py-5 border-b border-white/5 bg-[#181f2b] flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
-                <File size={20} className="text-blue-400" />
+                <File size={22} className="text-blue-500" />
                 <span className="text-[14px] font-black text-white truncate max-w-xs sm:max-w-md uppercase tracking-wider">{previewFile.filename}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -1484,7 +1572,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                     a.click();
                     document.body.removeChild(a);
                   }}
-                  className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
+                  className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-455 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
                   title="Download File"
                 >
                   <Download size={18} />
@@ -1494,7 +1582,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                     window.URL.revokeObjectURL(previewFile.url);
                     setPreviewFile(null);
                   }}
-                  className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-500 rounded-xl transition-all border border-white/5 cursor-pointer"
+                  className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-455 hover:text-red-400 rounded-xl transition-all border border-white/5 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -1502,30 +1590,36 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             </div>
 
             {/* Modal Content */}
-            <div className="flex-1 overflow-auto p-6 flex items-center justify-center bg-slate-950/20">
+            <div className="flex-1 overflow-auto p-8 flex flex-col items-center justify-center bg-[#020617]">
               {previewFile.mimeType?.startsWith('image/') ? (
-                <img
-                  src={previewFile.url}
-                  alt={previewFile.filename}
-                  className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
-                />
+                <div className="flex-1 flex items-center justify-center">
+                  <img
+                    src={previewFile.url}
+                    alt={previewFile.filename}
+                    className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
+                  />
+                </div>
               ) : previewFile.mimeType === 'application/pdf' ? (
                 <iframe
                   src={previewFile.url}
-                  className="w-full h-full min-h-[60vh] rounded-2xl border border-white/5 bg-white"
+                  className="w-full h-full min-h-[65vh] rounded-2xl border border-white/5 bg-white"
                   title={previewFile.filename}
                 />
               ) : previewFile.excelData ? (
-                renderExcelTable(previewFile.excelData)
+                <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
+                  {renderExcelTable(previewFile.excelData)}
+                </div>
               ) : previewFile.filename?.toLowerCase()?.endsWith('.csv') ? (
-                renderCSVTable(previewFile.textContent)
+                <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
+                  {renderCSVTable(previewFile.textContent)}
+                </div>
               ) : previewFile.textContent ? (
-                <pre className="w-full max-w-4xl text-left bg-slate-900 text-slate-350 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
+                <pre className="w-full text-left bg-[#111620] text-slate-300 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
                   {previewFile.textContent}
                 </pre>
               ) : (
                 <div className="text-center p-12 bg-white/[0.02] border border-white/5 rounded-3xl max-w-md">
-                  <File size={48} className="text-slate-655 mx-auto mb-4 opacity-50" />
+                  <File size={48} className="text-slate-600 mx-auto mb-4 opacity-50" />
                   <p className="text-[13px] font-black text-slate-400 uppercase tracking-widest mb-4">Inline Preview Unavailable</p>
                   <p className="text-[11px] text-slate-500 font-medium mb-6">This file type ({previewFile.mimeType || 'unknown'}) cannot be displayed inline.</p>
                   <button

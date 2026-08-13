@@ -8,14 +8,14 @@ import consultantStatsRoutes from './consultantStats.routes.js';
 import ticketRoutes from './ticket.routes.js';
 import timeTrackingRoutes from './timeTracking.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
-import departmentRoutes from './departments/department.routes.js';
-import notificationRoutes from './notifications/notification.routes.js';
+import departmentRoutes from './department.routes.js';
+import notificationRoutes from './notification.routes.js';
 import preAssignmentRuleRoutes from './preAssignmentRule.routes.js';
 import ccEmailConfigRoutes from './ccEmailConfig.routes.js';
 import holidayRoutes from './holiday.routes.js';
 import attendanceRoutes from './attendance.routes.js';
 import systemSettingRoutes from './systemSetting.routes.js';
-import priorityRoutes from './priorities/priority.routes.js';
+import priorityRoutes from './priority.routes.js';
 
 const router = express.Router();
 

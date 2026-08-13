@@ -21,6 +21,10 @@ const clientSchema = new mongoose.Schema({
   contactPhone: {
     type: String
   },
+  initials: {
+    type: String,
+    unique: true
+  },
   
   // ERP Details (Header Level - Non-editable after initial setup)
   erpDetails: {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Bell, Settings, LogOut, User as UserIcon, Menu, Sun, Moon, Paperclip } from 'lucide-react';
 import { useThemeStore } from '../store/useThemeStore';
@@ -6,72 +6,43 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useNotificationStore } from '../store/useNotificationStore';
 import { useTicketStore } from '../store/useTicketStore';
 import { useNavigate } from 'react-router-dom';
-import TicketViewerModal from './ui/TicketViewerModal';
-import ProfileSettingsModal from './ui/ProfileSettingsModal';
 
-const playNotificationSound = () => {
-  try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-    osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.15); // E5
-    
-    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
-    
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.25);
-  } catch (e) {
-    console.warn('AudioContext blocked or failed:', e);
-  }
-};
+// Heavy modals are lazy-loaded — they are never needed on initial page render
+const TicketViewerModal    = lazy(() => import('./ui/TicketViewerModal'));
+const ProfileSettingsModal = lazy(() => import('./ui/ProfileSettingsModal'));
 
 const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const { user, logout } = useAuthStore();
-  const { notifications, fetchNotifications, markAsRead, downloadAttachment } = useNotificationStore();
-  
+  // Notifications are read from the store; polling is handled centrally in MainLayout
+  const { notifications, markAsRead, downloadAttachment } = useNotificationStore();
+
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const { theme, toggleTheme } = useThemeStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState('profile');
-  const prevUnreadCountRef = React.useRef(0);
 
   const { tickets } = useTicketStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  const searchResults = React.useMemo(() => {
+  // Memoised search — only re-runs when searchQuery or tickets change
+  const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const query = searchQuery.toLowerCase();
-    return tickets.filter(t => 
-      t.ticketNumber?.toLowerCase().includes(query) ||
-      t.title?.toLowerCase().includes(query) ||
-      t.user?.toLowerCase().includes(query)
-    ).slice(0, 5);
+    return tickets
+      .filter(
+        (t) =>
+          t.ticketNumber?.toLowerCase().includes(query) ||
+          t.title?.toLowerCase().includes(query) ||
+          t.user?.toLowerCase().includes(query)
+      )
+      .slice(0, 5);
   }, [searchQuery, tickets]);
 
-  React.useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  React.useEffect(() => {
-    const soundEnabled = user?.preferences?.soundEnabled !== false;
-    if (unreadCount > prevUnreadCountRef.current && soundEnabled) {
-      playNotificationSound();
-    }
-    prevUnreadCountRef.current = unreadCount;
-  }, [unreadCount, user?.preferences?.soundEnabled]);
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleLogout = () => {
     logout();
@@ -89,9 +60,9 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         </button>
         <div className="relative w-40 sm:w-80 max-w-md group">
           <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4 group-focus-within:text-blue-500 transition-colors z-10" />
-          <input 
-            type="text" 
-            placeholder="Search ticket number..." 
+          <input
+            type="text"
+            placeholder="Search ticket number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
@@ -113,38 +84,48 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                 </div>
                 <div className="max-h-80 overflow-y-auto custom-scrollbar">
                   {searchResults.length === 0 ? (
-                     <div className="px-5 py-6 text-center text-sm text-slate-500 font-medium">No tickets found for "{searchQuery}"</div>
-                  ) : searchResults.map(ticket => (
-                     <button 
-                        key={ticket.id || ticket._id} 
+                    <div className="px-5 py-6 text-center text-sm text-slate-500 font-medium">
+                      No tickets found for &quot;{searchQuery}&quot;
+                    </div>
+                  ) : (
+                    searchResults.map((ticket) => (
+                      <button
+                        key={ticket.id || ticket._id}
                         onClick={() => {
                           setSelectedTicket(ticket);
                           setSearchQuery('');
                           setIsSearchFocused(false);
-                        }} 
+                        }}
                         className="w-full text-left p-4 border-b border-white/5 hover:bg-white/[0.05] transition-all block relative"
-                     >
+                      >
                         <div className="flex justify-between items-center mb-1">
                           <h4 className="text-[13px] font-bold text-white leading-snug">{ticket.ticketNumber}</h4>
-                          <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded shadow-inner ${ticket.status === 'Resolved' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded shadow-inner ${
+                              ticket.status === 'Resolved'
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-red-500/20 text-red-400'
+                            }`}
+                          >
                             {ticket.status}
                           </span>
                         </div>
                         <p className="text-[12px] text-slate-400 leading-relaxed font-medium truncate">{ticket.title}</p>
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">User: {ticket.user}</p>
-                     </button>
-                  ))}
+                      </button>
+                    ))
+                  )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-5">
-        <motion.button 
-          whileHover={{ scale: 1.05 }} 
-          whileTap={{ scale: 0.95 }} 
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={toggleTheme}
           className="relative p-2.5 text-slate-400 hover:text-white transition-colors rounded-xl hover:bg-[#181f2b] border border-transparent hover:border-white/5 flex items-center justify-center w-10 h-10 overflow-hidden"
           aria-label="Toggle theme"
@@ -167,18 +148,18 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         </motion.button>
 
         <div className="relative">
-          <motion.button 
-            whileHover={{ scale: 1.05 }} 
-            whileTap={{ scale: 0.95 }} 
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => { setShowNotifications(!showNotifications); setShowProfile(false); }}
             className="relative p-2.5 text-slate-400 hover:text-white transition-colors rounded-xl hover:bg-[#181f2b] border border-transparent hover:border-white/5"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
             )}
           </motion.button>
-          
+
           <AnimatePresence>
             {showNotifications && (
               <motion.div
@@ -190,41 +171,55 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
               >
                 <div className="px-5 py-3 border-b border-white/5 bg-white/[0.02] flex justify-between items-center">
                   <h3 className="font-bold text-white text-[14px]">System Network</h3>
-                  <span className="text-[11px] font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">{unreadCount} Active</span>
+                  <span className="text-[11px] font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                    {unreadCount} Active
+                  </span>
                 </div>
                 <div className="max-h-80 overflow-y-auto custom-scrollbar">
                   {notifications.length === 0 ? (
-                     <div className="px-5 py-8 text-center text-sm text-slate-500 font-medium">No alerts currently circulating.</div>
-                  ) : notifications.map(notif => (
-                     <button key={notif._id} onClick={() => { if(!notif.read) markAsRead(notif._id); }} className={`w-full text-left p-4 border-b border-white/5 transition-all block relative bg-white/[0.01] hover:bg-white/[0.03] ${notif.read ? '' : 'bg-blue-500/[0.03]'}`}>
-                        {!notif.read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 pointer-events-none"></div>}
-                        <h4 className={`text-[13px] ${notif.read ? 'font-medium text-slate-300' : 'font-bold text-white'} mb-1 leading-snug`}>{notif.title}</h4>
-                        <p className="text-[12px] text-slate-400 leading-relaxed font-medium">{notif.message}</p>
-                        {notif.attachments && notif.attachments.length > 0 && (
-                           <div className="mt-3 flex flex-wrap gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
-                             {notif.attachments.map(att => (
-                               <button
-                                 key={att._id}
-                                 onClick={() => downloadAttachment(notif._id, att._id, att.originalName)}
-                                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg text-[10px] font-bold text-blue-400 transition-colors"
-                               >
-                                 <Paperclip size={10} />
-                                 <span className="truncate max-w-[100px]">{att.originalName}</span>
-                               </button>
-                             ))}
-                           </div>
+                    <div className="px-5 py-8 text-center text-sm text-slate-500 font-medium">
+                      No alerts currently circulating.
+                    </div>
+                  ) : (
+                    notifications.map((notif) => (
+                      <button
+                        key={notif._id}
+                        onClick={() => { if (!notif.read) markAsRead(notif._id); }}
+                        className={`w-full text-left p-4 border-b border-white/5 transition-all block relative bg-white/[0.01] hover:bg-white/[0.03] ${notif.read ? '' : 'bg-blue-500/[0.03]'}`}
+                      >
+                        {!notif.read && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 pointer-events-none" />
                         )}
-                     </button>
-                  ))}
+                        <h4 className={`text-[13px] ${notif.read ? 'font-medium text-slate-300' : 'font-bold text-white'} mb-1 leading-snug`}>
+                          {notif.title}
+                        </h4>
+                        <p className="text-[12px] text-slate-400 leading-relaxed font-medium">{notif.message}</p>
+                        {notif.attachments?.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+                            {notif.attachments.map((att) => (
+                              <button
+                                key={att._id}
+                                onClick={() => downloadAttachment(notif._id, att._id, att.originalName)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg text-[10px] font-bold text-blue-400 transition-colors"
+                              >
+                                <Paperclip size={10} />
+                                <span className="truncate max-w-[100px]">{att.originalName}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+                    ))
+                  )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-        
+
         <div className="relative">
-          <motion.button 
-            whileHover={{ scale: 1.02 }} 
+          <motion.button
+            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setShowProfile(!showProfile); setShowNotifications(false); }}
             className="flex items-center gap-3 pl-3 pr-2 py-1.5 rounded-2xl hover:bg-[#181f2b] border border-transparent hover:border-white/10 transition-all"
@@ -252,29 +247,21 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
                   <p className="text-[12px] font-medium text-slate-400 truncate">{user?.email || 'guest@example.com'}</p>
                 </div>
                 <div className="py-2 px-2 flex flex-col gap-1">
-                  <button 
-                    onClick={() => {
-                      setActiveModalTab('profile');
-                      setIsProfileModalOpen(true);
-                      setShowProfile(false);
-                    }}
+                  <button
+                    onClick={() => { setActiveModalTab('profile'); setIsProfileModalOpen(true); setShowProfile(false); }}
                     className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
                   >
                     <UserIcon size={16} /> Profile Information
                   </button>
-                  <button 
-                    onClick={() => {
-                      setActiveModalTab('settings');
-                      setIsProfileModalOpen(true);
-                      setShowProfile(false);
-                    }}
+                  <button
+                    onClick={() => { setActiveModalTab('settings'); setIsProfileModalOpen(true); setShowProfile(false); }}
                     className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
                   >
                     <Settings size={16} /> Dashboard Settings
                   </button>
                 </div>
                 <div className="border-t border-white/5 py-2 px-2">
-                  <button 
+                  <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-2.5 text-[13px] font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl flex items-center gap-3 transition-colors"
                   >
@@ -287,17 +274,22 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         </div>
       </div>
 
-      <TicketViewerModal 
-        ticket={selectedTicket}
-        isOpen={!!selectedTicket}
-        onClose={() => setSelectedTicket(null)}
-      />
+      {/* Lazy-loaded modals — only mounted when first opened, not on initial page load */}
+      <Suspense fallback={null}>
+        <TicketViewerModal
+          ticket={selectedTicket}
+          isOpen={!!selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+        />
+      </Suspense>
 
-      <ProfileSettingsModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        initialTab={activeModalTab}
-      />
+      <Suspense fallback={null}>
+        <ProfileSettingsModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          initialTab={activeModalTab}
+        />
+      </Suspense>
     </header>
   );
 };

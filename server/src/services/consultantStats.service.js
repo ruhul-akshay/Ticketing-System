@@ -286,23 +286,40 @@ export const getMyConsultantStats = async (currentUser, filters = {}) => {
   return await buildConsultantStats(consultantUser, filters);
 };
 
-export const getAllConsultantsStatsSummary = async () => {
+export const getAllConsultantsStatsSummary = async (filters = {}) => {
+  const { startDate, endDate } = filters;
   const consultants = await ClientUser.find({ role: 'consultant' })
     .populate('department', 'name')
     .select('name email employeeCode department createdAt hourlyCost')
     .lean();
 
+  const dateQuery = {};
+  if (startDate && endDate) {
+    dateQuery.createdAt = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate),
+    };
+  }
+
   return await Promise.all(
     consultants.map(async (consultant) => {
       const [total, resolved, open] = await Promise.all([
-        Ticket.countDocuments({ assignedTo: consultant._id }),
-        Ticket.countDocuments({ assignedTo: consultant._id, status: { $in: ['resolved', 'closed'] } }),
-        Ticket.countDocuments({ assignedTo: consultant._id, status: { $in: ['pending', 'assigned', 'hold', 'on hold'] } }),
+        Ticket.countDocuments({ assignedTo: consultant._id, ...dateQuery }),
+        Ticket.countDocuments({ assignedTo: consultant._id, status: { $in: ['resolved', 'closed'] }, ...dateQuery }),
+        Ticket.countDocuments({ assignedTo: consultant._id, status: { $in: ['pending', 'assigned', 'hold', 'on hold'] }, ...dateQuery }),
       ]);
+
+      const workHoursMatch = { 'workLogs.addedBy': new mongoose.Types.ObjectId(consultant._id) };
+      if (startDate && endDate) {
+        workHoursMatch['workLogs.date'] = {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        };
+      }
 
       const workHoursAgg = await Ticket.aggregate([
         { $unwind: { path: '$workLogs', preserveNullAndEmptyArrays: false } },
-        { $match: { 'workLogs.addedBy': new mongoose.Types.ObjectId(consultant._id) } },
+        { $match: workHoursMatch },
         { $group: { _id: null, totalHours: { $sum: '$workLogs.hours' } } },
       ]);
 

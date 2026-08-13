@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Ticket, Clock, CheckCircle, AlertCircle, Building2, Paperclip, XCircle, Star, Award, TrendingUp } from 'lucide-react';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -195,6 +195,108 @@ export default function Dashboard() {
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  // States for Solved Ticket Review Popup
+  const [showAutoReviewModal, setShowAutoReviewModal] = React.useState(false);
+  const [reviewTicket, setReviewTicket] = React.useState(null);
+  const [rating, setRating] = React.useState(5);
+  const [comment, setComment] = React.useState('');
+  const [submittingFeedback, setSubmittingFeedback] = React.useState(false);
+  const [feedbackError, setFeedbackError] = React.useState('');
+  const [feedbackSuccess, setFeedbackSuccess] = React.useState(false);
+  const [handledTicketIds, setHandledTicketIds] = React.useState(() => {
+    try {
+      const stored = sessionStorage.getItem('handled_reviews');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+
+  const unreviewedSolvedTicket = React.useMemo(() => {
+    if (!tickets || !user) return null;
+    return tickets.find(t => {
+      const ticketId = t.original?._id || t.id || t._id;
+      if (handledTicketIds.has(ticketId)) return false;
+
+      const isOwner = t.creatorId === user.id || t.creatorId === user._id || t.user === user.name;
+      const isSolved = ['resolved', 'closed'].includes(t.status?.toLowerCase());
+      const hasNoRating = !t.feedback || (!t.feedback.rating && !t.original?.feedback?.rating);
+      return isOwner && isSolved && hasNoRating;
+    });
+  }, [tickets, user, handledTicketIds]);
+
+  useEffect(() => {
+    if (unreviewedSolvedTicket) {
+      const ticketId = unreviewedSolvedTicket.original?._id || unreviewedSolvedTicket.id || unreviewedSolvedTicket._id;
+      const currentReviewId = reviewTicket?.original?._id || reviewTicket?.id || reviewTicket?._id;
+      
+      if (ticketId !== currentReviewId) {
+        setReviewTicket(unreviewedSolvedTicket);
+        setShowAutoReviewModal(true);
+        setRating(5);
+        setComment('');
+        setFeedbackSuccess(false);
+        setFeedbackError('');
+      }
+    } else {
+      setShowAutoReviewModal(false);
+      setReviewTicket(null);
+    }
+  }, [unreviewedSolvedTicket, reviewTicket]);
+
+  const dismissModal = () => {
+    if (reviewTicket) {
+      const ticketId = reviewTicket.original?._id || reviewTicket.id || reviewTicket._id;
+      setHandledTicketIds(prev => {
+        const next = new Set(prev);
+        next.add(ticketId);
+        try {
+          sessionStorage.setItem('handled_reviews', JSON.stringify(Array.from(next)));
+        } catch (e) {}
+        return next;
+      });
+    }
+    setShowAutoReviewModal(false);
+  };
+
+  const handleSubmitAutoReview = async () => {
+    if (!reviewTicket) return;
+    setSubmittingFeedback(true);
+    setFeedbackError('');
+    try {
+      const ticketId = reviewTicket.original?._id || reviewTicket.id || reviewTicket._id;
+      await api.post(`/tickets/${ticketId}/feedback`, { rating, comment });
+      
+      // Update local state in Zustand store
+      useTicketStore.setState(state => ({
+        tickets: state.tickets.map(t => 
+          (t.id === ticketId || t._id === ticketId)
+            ? { ...t, feedback: { rating, comment }, original: { ...t.original, feedback: { rating, comment } } }
+            : t
+        )
+      }));
+
+      setFeedbackSuccess(true);
+      setTimeout(() => {
+        setHandledTicketIds(prev => {
+          const next = new Set(prev);
+          next.add(ticketId);
+          try {
+            sessionStorage.setItem('handled_reviews', JSON.stringify(Array.from(next)));
+          } catch (e) {}
+          return next;
+        });
+        setShowAutoReviewModal(false);
+        setReviewTicket(null);
+      }, 1500);
+    } catch (err) {
+      console.error('Feedback Error:', err);
+      setFeedbackError(err.response?.data?.message || 'Failed to submit feedback. Please try again.');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
 
   const [clientData, setClientData] = React.useState(null);
   const [clientLoading, setClientLoading] = React.useState(true);
@@ -567,73 +669,274 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {clientData.erpDetails?.sapSupportAMC?.status && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="bg-[#111620]/80 backdrop-blur-2xl border border-white/5 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden">
-               <h3 className="font-bold text-white mb-6 flex items-center gap-2 text-lg">
-                 <Clock className="text-blue-400" size={20} /> Support Contract
-               </h3>
-               <div className="space-y-6 relative z-10">
-                 <div className="flex gap-8">
+        {clientData?.erpDetails?.sapSupportAMC?.status && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="bg-[#111620]/80 backdrop-blur-2xl border border-white/5 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden">
+             <h3 className="font-bold text-white mb-6 flex items-center gap-2 text-lg">
+               <Clock className="text-blue-400" size={20} /> Support Contract
+             </h3>
+             <div className="space-y-6 relative z-10">
+               <div className="flex gap-8">
+                  <div>
+                    <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Contract Status</span>
+                    <Badge color={clientData.erpDetails.sapSupportAMC.status === 'Active' ? 'green' : 'red'}>
+                      {clientData.erpDetails.sapSupportAMC.status}
+                    </Badge>
+                  </div>
+                  {clientData.erpDetails.sapSupportAMCType && (
                     <div>
-                      <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Contract Status</span>
-                      <Badge color={clientData.erpDetails.sapSupportAMC.status === 'Active' ? 'green' : 'red'}>
-                        {clientData.erpDetails.sapSupportAMC.status}
-                      </Badge>
+                      <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Support Plan</span>
+                      <div className="font-bold text-slate-200">{clientData.erpDetails.sapSupportAMCType}</div>
                     </div>
-                    {clientData.erpDetails.sapSupportAMCType && (
-                      <div>
-                        <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Support Plan</span>
-                        <div className="font-bold text-slate-200">{clientData.erpDetails.sapSupportAMCType}</div>
-                      </div>
-                    )}
-                 </div>
+                  )}
+               </div>
 
-                 {clientData.erpDetails.sapSupportAMCType === 'Limited' && (clientData.erpDetails.sapSupportHourlyCap || 0) > 0 && (() => {
-                   const cap = clientData.erpDetails.sapSupportHourlyCap;
-                   const used = clientData.erpDetails.hoursUsed || 0;
-                   const pct = Math.min(100, (used / cap) * 100);
-                   const isExceeded = pct >= 100;
-                   const isNearCap = pct >= 85 && !isExceeded;
-                   const barColor = isExceeded ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : isNearCap ? 'bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]';
-                   return (
-                     <div className="pt-2 space-y-4">
-                       {(isExceeded || isNearCap) && (
-                         <div className={`flex items-start gap-3 p-3 rounded-xl border ${isExceeded ? 'bg-red-500/10 border-red-500/30' : 'bg-orange-500/10 border-orange-500/30'}`}>
-                           <AlertCircle size={16} className={isExceeded ? 'text-red-400 shrink-0 mt-0.5' : 'text-orange-400 shrink-0 mt-0.5'} />
-                           <p className={`text-[12px] font-bold ${isExceeded ? 'text-red-300' : 'text-orange-300'}`}>
-                             {isExceeded
-                               ? `⚠️ Support hours cap exceeded! You have used ${used.toFixed(1)}h of your ${cap}h limit. Please contact your support team for renewal.`
-                               : `⚠️ You have used ${used.toFixed(1)}h of ${cap}h (${pct.toFixed(1)}%). You are nearing your support hour limit.`
-                             }
-                           </p>
-                         </div>
-                       )}
-                       <div>
-                         <div className="flex justify-between items-end mb-2">
-                           <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block">Hourly Cap Consumption</span>
-                           <span className={`text-sm font-black ${isExceeded ? 'text-red-400' : isNearCap ? 'text-orange-400' : 'text-blue-400'}`}>
-                             {used.toFixed(1)} <span className="text-slate-500 text-xs font-bold">/ {cap} hrs ({pct.toFixed(1)}%)</span>
-                           </span>
-                         </div>
-                         <div className="w-full h-3 bg-white/5 border border-white/5 rounded-full overflow-hidden">
-                           <div 
-                             className={`h-full transition-all duration-1000 ${barColor}`} 
-                             style={{ width: `${pct}%` }} 
-                           />
-                         </div>
-                         <div className="flex justify-between mt-1">
-                           <span className="text-[10px] text-slate-600 font-bold">0 hrs</span>
-                           <span className="text-[10px] text-slate-600 font-bold">{cap} hrs</span>
-                         </div>
+               {clientData.erpDetails.sapSupportAMCType === 'Limited' && (clientData.erpDetails.sapSupportHourlyCap || 0) > 0 && (() => {
+                 const cap = clientData.erpDetails.sapSupportHourlyCap;
+                 const used = clientData.erpDetails.hoursUsed || 0;
+                 const pct = Math.min(100, (used / cap) * 100);
+                 const isExceeded = pct >= 100;
+                 const isNearCap = pct >= 85 && !isExceeded;
+                 const barColor = isExceeded ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : isNearCap ? 'bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.5)]' : 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]';
+                 return (
+                   <div className="pt-2 space-y-4">
+                     {(isExceeded || isNearCap) && (
+                       <div className={`flex items-start gap-3 p-3 rounded-xl border ${isExceeded ? 'bg-red-500/10 border-red-500/30' : 'bg-orange-500/10 border-orange-500/30'}`}>
+                         <AlertCircle size={16} className={isExceeded ? 'text-red-400 shrink-0 mt-0.5' : 'text-orange-400 shrink-0 mt-0.5'} />
+                         <p className={`text-[12px] font-bold ${isExceeded ? 'text-red-300' : 'text-orange-300'}`}>
+                           {isExceeded
+                             ? `⚠️ Support hours cap exceeded! You have used ${used.toFixed(1)}h of your ${cap}h limit. Please contact your support team for renewal.`
+                             : `⚠️ You have used ${used.toFixed(1)}h of ${cap}h (${pct.toFixed(1)}%). You are nearing your support hour limit.`
+                           }
+                         </p>
+                       </div>
+                     )}
+                     <div>
+                       <div className="flex justify-between items-end mb-2">
+                         <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest block">Hourly Cap Consumption</span>
+                         <span className={`text-sm font-black ${isExceeded ? 'text-red-400' : isNearCap ? 'text-orange-400' : 'text-blue-400'}`}>
+                           {used.toFixed(1)} <span className="text-slate-500 text-xs font-bold">/ {cap} hrs ({pct.toFixed(1)}%)</span>
+                         </span>
+                       </div>
+                       <div className="w-full h-3 bg-white/5 border border-white/5 rounded-full overflow-hidden">
+                         <div 
+                           className={`h-full transition-all duration-1000 ${barColor}`} 
+                           style={{ width: `${pct}%` }} 
+                         />
+                       </div>
+                       <div className="flex justify-between mt-1">
+                         <span className="text-[10px] text-slate-600 font-bold">0 hrs</span>
+                         <span className="text-[10px] text-slate-600 font-bold">{cap} hrs</span>
                        </div>
                      </div>
-                   );
-                 })()}
-               </div>
-            </motion.div>
-          )}
-        </div>
+                   </div>
+                 );
+               })()}
+             </div>
+          </motion.div>
+        )}
+      </div>
       )}
+      
+      <AnimatePresence>
+        {showAutoReviewModal && reviewTicket && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={dismissModal}
+              className={`absolute inset-0 z-40 backdrop-blur-sm ${isDark ? 'bg-slate-950/80' : 'bg-slate-900/40'}`}
+            />
+
+            {/* Modal Content Card */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={`w-full max-w-md rounded-3xl p-8 shadow-2xl relative overflow-hidden z-50 border transition-colors duration-300 ${
+                isDark 
+                  ? 'bg-[#111620] border-white/10' 
+                  : 'bg-white border-slate-200 shadow-slate-200/50'
+              }`}
+            >
+              {/* Premium Top Highlight Border */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
+              
+              {/* Close Button in corner */}
+              <button
+                onClick={dismissModal}
+                className={`absolute top-4 right-4 p-2 rounded-xl transition-all focus:outline-none ${
+                  isDark 
+                    ? 'text-slate-400 hover:text-white hover:bg-white/5' 
+                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                }`}
+                title="Dismiss"
+              >
+                <XCircle size={20} />
+              </button>
+
+              {isDark && (
+                <>
+                  <div className="absolute -right-20 -top-20 w-60 h-60 bg-yellow-500/10 blur-[80px] rounded-full pointer-events-none" />
+                  <div className="absolute -left-20 -bottom-20 w-60 h-60 bg-amber-600/10 blur-[80px] rounded-full pointer-events-none" />
+                </>
+              )}
+
+              <div className="text-center relative z-10 mt-2">
+                {/* Glowing Star Header Icon */}
+                <div className={`w-16 h-16 rounded-2xl border text-yellow-400 flex items-center justify-center mx-auto mb-6 relative ${
+                  isDark 
+                    ? 'bg-gradient-to-tr from-yellow-500/20 to-amber-500/10 border-yellow-500/30 shadow-[0_0_20px_rgba(234,179,8,0.15)]' 
+                    : 'bg-gradient-to-tr from-yellow-500/10 to-amber-500/5 border-yellow-500/20 shadow-sm shadow-yellow-500/10'
+                }`}>
+                  <Star size={30} className="fill-yellow-500 animate-pulse" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                  </span>
+                </div>
+                
+                <h3 className="text-2xl font-black tracking-tight mb-2" style={{ color: isDark ? '#ffffff' : '#0f172a' }}>
+                  Rate Our Support
+                </h3>
+                <p className="text-[12px] font-black uppercase tracking-widest mb-4 border px-3 py-1 rounded-full inline-block" 
+                   style={{ 
+                     color: isDark ? '#fbbf24' : '#b45309', 
+                     backgroundColor: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.08)',
+                     borderColor: isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.2)' 
+                   }}>
+                  Ticket #{reviewTicket.ticketNumber}
+                </p>
+                <p className="text-[15px] font-bold mb-6 italic px-2" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>
+                  "{reviewTicket.title}"
+                </p>
+
+                {feedbackSuccess ? (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`p-8 border rounded-2xl text-sm font-bold flex flex-col items-center gap-3 ${
+                      isDark 
+                        ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.1)]' 
+                        : 'bg-emerald-55 text-emerald-700 border-emerald-200 shadow-sm shadow-emerald-500/5'
+                    }`}
+                  >
+                    <CheckCircle size={32} className="animate-bounce text-emerald-500" />
+                    <span className="text-base font-black">Thank You!</span>
+                    Your feedback helps us continuously improve our service quality.
+                  </motion.div>
+                ) : (
+                  <div className="space-y-6 text-left">
+                    {/* Star Rating Select */}
+                    <div className="flex flex-col items-center gap-3 border p-5 rounded-2xl" 
+                         style={{ 
+                           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc',
+                           borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#f1f5f9'
+                         }}>
+                      <span className="text-[11px] font-black uppercase tracking-widest text-center" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                        How would you rate this interaction?
+                      </span>
+                      
+                      <div className="flex items-center gap-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <motion.button
+                            key={star}
+                            whileHover={{ scale: 1.25, rotate: 8 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => setRating(star)}
+                            className="p-1 text-yellow-500 transition-colors"
+                            type="button"
+                          >
+                            <Star 
+                              size={38} 
+                              className={star <= rating 
+                                ? "fill-yellow-500 text-yellow-500 drop-shadow-[0_0_12px_rgba(234,179,8,0.7)]" 
+                                : isDark ? "fill-transparent text-slate-700 hover:text-yellow-500/75" : "fill-transparent text-slate-300 hover:text-yellow-500/75"
+                              } 
+                            />
+                          </motion.button>
+                        ))}
+                      </div>
+
+                      {/* Dynamic Quality Indicator text */}
+                      <div className="h-5 flex items-center justify-center">
+                        <span className="text-[13px] font-black tracking-wider" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
+                          {
+                            rating === 1 ? 'Terrible 😠' :
+                            rating === 2 ? 'Poor 😟' :
+                            rating === 3 ? 'Average 😐' :
+                            rating === 4 ? 'Very Good 🙂' :
+                            'Excellent! 🌟'
+                          }
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Comment Field */}
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[11px] font-black uppercase tracking-widest" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                        Comments or Feedback
+                      </label>
+                      <textarea
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        placeholder="Tell us about your experience (optional)..."
+                        rows={3}
+                        className={`w-full border rounded-2xl p-4 text-[13px] focus:outline-none transition-all resize-none shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500`}
+                        style={{ 
+                          backgroundColor: isDark ? '#181f2b' : '#ffffff', 
+                          color: isDark ? '#ffffff' : '#0f172a',
+                          borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#cbd5e1'
+                        }}
+                      />
+                    </div>
+
+                    {feedbackError && (
+                      <p className="text-red-400 text-[12px] font-bold text-center border py-2.5 px-4 rounded-xl" 
+                         style={{ 
+                           backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2', 
+                           color: isDark ? '#f87171' : '#b91c1c',
+                           borderColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#fecaca'
+                         }}>
+                        {feedbackError}
+                      </p>
+                    )}
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        onClick={dismissModal}
+                        className={`flex-1 py-3.5 text-[13px] font-bold rounded-2xl transition-all border border-transparent focus:outline-none ${
+                          isDark 
+                            ? 'text-slate-400 hover:text-white hover:bg-white/5' 
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                        }`}
+                        disabled={submittingFeedback}
+                        type="button"
+                      >
+                        Maybe Later
+                      </button>
+                      <button
+                        onClick={handleSubmitAutoReview}
+                        className="flex-1 py-3.5 text-[13px] font-black bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 focus:outline-none"
+                        disabled={submittingFeedback}
+                        type="button"
+                      >
+                        {submittingFeedback ? (
+                          <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          'Submit Review'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

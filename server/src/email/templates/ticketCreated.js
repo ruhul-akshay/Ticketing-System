@@ -42,11 +42,13 @@ export const sendTicketCreatedEmail = async (to, ticket, cc = null, holidayReaso
     day  : '2-digit',
     month: 'long',
     year : 'numeric',
+    timeZone: 'Asia/Kolkata'
   });
   const timeStr          = submittedAt.toLocaleTimeString('en-US', {
     hour  : '2-digit',
     minute: '2-digit',
     hour12: true,
+    timeZone: 'Asia/Kolkata'
   });
 
   const attachmentCount  =

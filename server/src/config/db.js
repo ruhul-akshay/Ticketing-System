@@ -1,24 +1,38 @@
 import mongoose from 'mongoose';
-import chalk from 'chalk';
+import { logger } from '../utils/logger.js';
+
+// ── Connection options for production resilience ──────────────────────────────
+const MONGOOSE_OPTIONS = {
+  serverSelectionTimeoutMS: 10_000,   // Fail fast if DB is unreachable
+  socketTimeoutMS:          45_000,   // Close sockets after 45 s of inactivity
+  maxPoolSize:              10,        // Max concurrent connections in pool
+};
 
 export const connectDB = async () => {
-  try {
-    if (!process.env.MONGODB_URI) {
-      throw new Error('MONGODB_URI is required');
-    }
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log(chalk.green('✓ MongoDB Connected'));
-  } catch (err) {
-    console.error(chalk.red('❌ MongoDB Connection failed:'), err);
-    throw err;
+  if (!process.env.MONGODB_URI) {
+    throw new Error('MONGODB_URI is required');
   }
+
+  await mongoose.connect(process.env.MONGODB_URI, MONGOOSE_OPTIONS);
+  logger.info('✓ MongoDB connected');
+
+  // Connectivity monitoring
+  mongoose.connection.on('disconnected', () =>
+    logger.warn('MongoDB disconnected — attempting auto-reconnect…')
+  );
+  mongoose.connection.on('reconnected', () =>
+    logger.info('MongoDB reconnected')
+  );
+  mongoose.connection.on('error', (err) =>
+    logger.error(`MongoDB connection error: ${err.message}`)
+  );
 };
 
 export const closeDB = async () => {
   try {
     await mongoose.connection.close();
-    console.log(chalk.yellow('🔌 MongoDB Connection closed'));
+    logger.info('🔌 MongoDB connection closed gracefully');
   } catch (err) {
-    console.error(chalk.red('❌ Error closing MongoDB connection:'), err);
+    logger.error(`Error closing MongoDB connection: ${err.message}`);
   }
 };

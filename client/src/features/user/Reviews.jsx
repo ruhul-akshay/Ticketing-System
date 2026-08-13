@@ -32,6 +32,14 @@ export default function Reviews() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  const formatDateTime = (dateVal) => {
+    if (!dateVal) return '';
+    const date = new Date(dateVal);
+    const dStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const tStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${dStr} • ${tStr}`;
+  };
+
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
@@ -139,8 +147,8 @@ export default function Reviews() {
                 )}
               </div>
               <h3 className="text-slate-800 dark:text-white text-sm font-bold truncate mb-1 leading-snug">{ticket.title}</h3>
-              <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-550 font-bold uppercase tracking-wider">
-                <Clock size={10} /> {new Date(ticket.createdAt).toLocaleDateString()}
+              <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-blue-400 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/10 px-2 py-0.5 rounded w-fit font-bold uppercase tracking-wider">
+                <Clock size={10} className="shrink-0" /> {formatDateTime(ticket.createdAt)}
               </div>
             </motion.div>
           );

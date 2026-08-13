@@ -8,24 +8,48 @@ export const useClientStore = create((set, get) => ({
   isLoading: false,
   isRefreshing: false,
   error: null,
+  lastFetched: null,      // timestamp of last successful fetch
+  _fetchPromise: null,    // shared in-flight promise for deduplication
   
-  fetchClients: async (params = {}) => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await api.get('/clients', { params });
-      if (response.data && response.data.success) {
-        set({ 
-          clients: response.data.clients || [], 
-          pagination: response.data.pagination || null,
-          isLoading: false 
-        });
-      } else {
-        set({ clients: response.data || [], isLoading: false });
-      }
-    } catch (error) {
-      console.error('Failed to fetch clients:', error);
-      set({ error: error.response?.data?.message || 'Failed to fetch clients', isLoading: false });
+  fetchClients: async (params = {}, { force = false } = {}) => {
+    const state = get();
+    const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+    const isDefaultParams = !params || Object.keys(params).length === 0;
+
+    // Use cache if data is fresh, not forced, and no special query params
+    if (!force && isDefaultParams && state.lastFetched && Date.now() - state.lastFetched < CACHE_TTL_MS && state.clients.length > 0) {
+      return;
     }
+
+    // Deduplicate concurrent fetches (only for default/no params calls)
+    if (isDefaultParams && state._fetchPromise) {
+      return state._fetchPromise;
+    }
+
+    set({ isLoading: true, error: null });
+
+    const promise = api.get('/clients', { params })
+      .then(response => {
+        if (response.data && response.data.success) {
+          set({
+            clients: response.data.clients || [],
+            pagination: response.data.pagination || null,
+            isLoading: false,
+            lastFetched: isDefaultParams ? Date.now() : state.lastFetched,
+            _fetchPromise: null,
+          });
+        } else {
+          set({ clients: response.data || [], isLoading: false, _fetchPromise: null });
+        }
+      })
+      .catch(error => {
+        console.error('Failed to fetch clients:', error);
+        set({ error: error.response?.data?.message || 'Failed to fetch clients', isLoading: false, _fetchPromise: null });
+        throw error;
+      });
+
+    if (isDefaultParams) set({ _fetchPromise: promise });
+    return promise;
   },
 
   fetchStats: async () => {
@@ -112,13 +136,21 @@ export const useClientStore = create((set, get) => ({
   deleteClient: async (id) => {
     try {
       const res = await api.delete(`/clients/${id}`);
-      if(res.data.success) {
-        await get().fetchClients();
+      if (res.data.success) {
+        // Invalidate cache so the next fetch will be fresh
+        set({ lastFetched: null });
+        await get().fetchClients({ force: true });
         await get().fetchStats();
+        return { success: true };
       }
+      return { success: false, message: 'Delete did not succeed.' };
     } catch (error) {
-      console.error('Delete failed', error);
-      alert(error.response?.data?.message || 'Delete failed. Ensure there are no active employees under this client.');
+      const msg =
+        error.response?.data?.message ||
+        'Delete failed. Ensure there are no active employees under this client.';
+      console.error('[Clients] Delete failed:', error);
+      // Return the error instead of calling alert() which blocks the browser thread
+      return { success: false, message: msg };
     }
   },
 

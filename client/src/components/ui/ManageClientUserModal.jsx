@@ -14,8 +14,10 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
   
   const [formData, setFormData] = useState({
     name: '', email: '', password: '', confirmPassword: '', employeeCode: '',
-    clientId: '', phoneNumber: '', position: ''
+    clientId: '', phoneNumber: '', position: '', status: 'active', statusReason: ''
   });
+
+  const isSelf = user && (user._id === currentUser?._id || user.id === currentUser?._id || user._id === (currentUser?.id || currentUser?._id));
 
   useEffect(() => {
     if (mode === 'edit' && user) {
@@ -27,7 +29,9 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
         employeeCode: user.employeeCode || '',
         clientId: user.client?._id || user.clientId || (isClientUser ? (currentUser?.client?._id || currentUser?.client) : ''),
         phoneNumber: user.phoneNumber || '',
-        position: user.position || ''
+        position: user.position || '',
+        status: user.status || 'active',
+        statusReason: user.statusReason || ''
       });
     } else if (mode === 'create') {
       setFormData({
@@ -38,7 +42,9 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
         employeeCode: '',
         clientId: isClientUser ? (currentUser?.client?._id || currentUser?.client) : '',
         phoneNumber: '',
-        position: ''
+        position: '',
+        status: 'active',
+        statusReason: ''
       });
     }
   }, [mode, user, isClientUser, currentUser]);
@@ -59,7 +65,8 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
     const payload = {
       name: formData.name, email: formData.email, role: 'clientuser',
       employeeCode: formData.employeeCode, clientId: formData.clientId,
-      phoneNumber: formData.phoneNumber, position: formData.position
+      phoneNumber: formData.phoneNumber, position: formData.position,
+      status: formData.status, statusReason: formData.statusReason
     };
     if (formData.password) payload.password = formData.password;
 
@@ -96,7 +103,7 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
           <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Input label="Full Name *" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} required />
-              <Input label="Email Address *" type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} disabled={mode === 'edit'} required />
+              <Input label="Email Address *" type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} required />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -127,6 +134,31 @@ export default function ManageClientUserModal({ isOpen, mode, user, onClose, cli
                 </div>
               )}
             </div>
+
+            {mode === 'edit' && !isSelf && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-white/5 pt-6">
+                <div className="space-y-2">
+                  <label className="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2 block">Account Status</label>
+                  <select 
+                    value={formData.status} 
+                    onChange={e => setFormData(p => ({ ...p, status: e.target.value }))} 
+                    className="w-full bg-[#1d2633] border border-white/5 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500/50 shadow-inner appearance-none text-sm font-medium"
+                  >
+                    <option value="active">🟢 Active</option>
+                    <option value="suspended">🔴 Inactive</option>
+                  </select>
+                </div>
+                {formData.status === 'suspended' && (
+                  <Input 
+                    label="Reason for Inactivation" 
+                    value={formData.statusReason} 
+                    onChange={e => setFormData(p => ({ ...p, statusReason: e.target.value }))} 
+                    placeholder="Enter reason..."
+                    required
+                  />
+                )}
+              </div>
+            )}
           </form>
         </div>
 

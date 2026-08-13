@@ -4,7 +4,8 @@ import {
   X, Send, User, Clock, AlertCircle, Building2, Tag, 
   Download, File, UploadCloud, Plus, Trash2, 
   ClipboardList, MessageSquare, CheckCircle, Shield, 
-  History, Settings, Activity, Briefcase, Eye, Lock
+  History, Settings, Activity, Briefcase, Eye, Lock,
+  ChevronRight
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTicketStore } from '../../store/useTicketStore';
@@ -64,20 +65,20 @@ const renderCSVTable = (text) => {
   const rows = parseCSV(text);
   if (rows.length === 0) return <p className="text-slate-500">Empty CSV file</p>;
   return (
-    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+    <div className="w-full h-full overflow-auto bg-[#0b0f19] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
       <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
           <tr>
             {rows[0].map((cell, idx) => (
-              <th key={idx} className="p-4 whitespace-nowrap">{cell}</th>
+              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5 text-slate-300">
           {rows.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
               {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell}>{cell}</td>
+                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell}>{cell}</td>
               ))}
             </tr>
           ))}
@@ -90,20 +91,20 @@ const renderCSVTable = (text) => {
 const renderExcelTable = (excelData) => {
   if (!excelData || excelData.length === 0) return <p className="text-slate-500">Empty Excel sheet</p>;
   return (
-    <div className="w-full max-w-5xl overflow-auto max-h-[70vh] bg-slate-900 border border-white/10 rounded-2xl custom-scrollbar shadow-inner text-left">
+    <div className="w-full h-full overflow-auto bg-[#0b0f19] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
       <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-slate-800/80 sticky top-0 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
+        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
           <tr>
             {excelData[0].map((cell, idx) => (
-              <th key={idx} className="p-4 whitespace-nowrap">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
+              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5 text-slate-300">
           {excelData.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
               {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[120px] max-w-[300px] truncate" title={cell !== undefined && cell !== null ? String(cell) : ''}>
+                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell !== undefined && cell !== null ? String(cell) : ''}>
                   {cell !== undefined && cell !== null ? String(cell) : ''}
                 </td>
               ))}
@@ -116,16 +117,20 @@ const renderExcelTable = (excelData) => {
 };
 
 export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onClose, onUpdateStatus }) {
-  const liveTicket = useTicketStore((state) => 
-    state.tickets.find((t) => t.id === (initialTicket?.id || initialTicket?.original?._id)) || initialTicket
-  );
+  const liveTicket = useTicketStore((state) => {
+    const targetId = String(initialTicket?.id || initialTicket?._id || initialTicket?.original?._id || '');
+    return state.tickets.find((t) => String(t.id || t._id || t.original?._id) === targetId) || initialTicket;
+  });
 
   const { fetchTickets, forwardTicket } = useTicketStore();
-  const { consultants: admins, fetchConsultants: fetchAdmins } = useConsultantStore();
+  const { consultants: admins, fetchConsultants: fetchAdmins, isLoading: adminsLoading } = useConsultantStore();
 
   const [selectedAdminId, setSelectedAdminId] = useState('');
   const [forwardRemarks, setForwardRemarks] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
+  const [forwardCcConsultantIds, setForwardCcConsultantIds] = useState([]);
+  const [forwardCcEmails, setForwardCcEmails] = useState('');
+  const [forwardCcDropdownOpen, setForwardCcDropdownOpen] = useState(false);
 
   React.useEffect(() => {
     if (!initialTicket || !liveTicket) return;
@@ -144,10 +149,19 @@ export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onC
     const isPrivileged = user?.role === 'consultant' || user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'Consultant' || user?.role === 'Admin' || user?.role === 'Super Admin';
     if (isPrivileged) {
       fetchAdmins().catch(err => console.error('Error fetching consultants:', err));
+      if (liveTicket) {
+        const ticketId = liveTicket.id || liveTicket._id || liveTicket.original?._id;
+        const openedByList = (liveTicket.openedBy || liveTicket.original?.openedBy || []).map(id => id.toString());
+        const userId = (user?.id || user?._id)?.toString();
+        if (ticketId && userId && !openedByList.includes(userId)) {
+          useTicketStore.getState().markTicketAsOpened(ticketId);
+        }
+      }
     }
-  }, [user]);
+  }, [user, liveTicket?.id, fetchAdmins]);
 
   const [reply, setReply] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
   const [solution, setSolution] = useState(ticket.original?.solution || '');
   const [remarkFiles, setRemarkFiles] = useState([]);
   const [isInternal, setIsInternal] = useState(false);
@@ -240,6 +254,49 @@ export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onC
     } else { onClose(); }
   };
 
+  // Dedicated handler for logging effort on already-resolved tickets (sends workLogs only, no status/remarks change)
+  const handleSaveWorkLogsOnly = async () => {
+    if (validEntries.length === 0) {
+      return alert('Please enter at least one valid effort entry (date + time).');
+    }
+    try {
+      await useTicketStore.getState().updateTicketStatus(
+        ticket.id,
+        ticket.status,   // keep current status unchanged
+        null,            // no remarks
+        null,            // no solution change
+        validEntries,    // only workLogs
+        [], [], false
+      );
+      setWorkLogEntries([{ date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }]);
+      alert('Effort hours saved successfully!');
+      await fetchTickets();
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to save effort hours.');
+    }
+  };
+
+  const handleSendRemark = async () => {
+    const text = reply.trim();
+    const files = remarkFiles;
+    if (!text && files.length === 0) return;
+
+    setIsSendingChat(true);
+    try {
+      await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, null, [], [], files, isInternal);
+      setReply('');
+      setRemarkFiles([]);
+      setIsInternal(false);
+      if (remarkFileInputRef.current) remarkFileInputRef.current.value = '';
+      await fetchTickets();
+    } catch (err) {
+      console.error('Send remark error:', err);
+      alert(err?.response?.data?.message || 'Failed to send message. Please try again.');
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
   const handleDownloadTicketDetails = () => {
     const clientName = ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal';
     const reportText = `==================================================
@@ -316,7 +373,30 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
 
   const handleFileChange = (e) => {
     if (e.target.files?.length) {
-      setAdminFiles(Array.from(e.target.files));
+      const files = Array.from(e.target.files);
+      setAdminFiles(prev => {
+        const next = [...prev, ...files];
+        const reflections = files.map(f => `\n[Attachment: ${f.name}]`).join('');
+        setSolution(prevSol => {
+          let cleanSol = prevSol || '';
+          if (!cleanSol.includes(reflections)) {
+            cleanSol += reflections;
+          }
+          return cleanSol;
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleRemoveAdminFile = (indexToRemove) => {
+    const fileToRemove = adminFiles[indexToRemove];
+    setAdminFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    if (fileToRemove) {
+      setSolution(prevSol => {
+        const searchStr = `\n[Attachment: ${fileToRemove.name}]`;
+        return (prevSol || '').replace(searchStr, '');
+      });
     }
   };
 
@@ -353,14 +433,14 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
         <div className="px-4 sm:px-10 py-6 sm:py-8 border-b border-slate-200 dark:border-white/5 bg-gradient-to-r from-slate-100/50 to-slate-50/50 dark:from-[#1e293b]/50 dark:to-[#0f172a]/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden shrink-0">
           <div className="absolute top-0 left-0 w-full h-full bg-blue-600/5 blur-[100px] pointer-events-none" />
           
-          <div className="flex items-center gap-4 sm:gap-6 relative z-10 w-full sm:w-auto">
+          <div className="flex items-center gap-4 sm:gap-6 relative z-10 w-full sm:flex-1 min-w-0">
             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-2xl shadow-blue-500/20 ring-4 ring-blue-500/10 shrink-0">
               <ClipboardList size={24} className="sm:hidden" />
               <ClipboardList size={32} className="hidden sm:block" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-1.5">
-                <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">
+                <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[9px] sm:text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">
                   {ticket.ticketNumber || ticket.id.slice(-8).toUpperCase()}
                 </span>
                 <span className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest border ${
@@ -372,11 +452,11 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   {status}
                 </span>
               </div>
-              <h2 className="text-xl sm:text-3xl font-black text-slate-800 dark:text-white tracking-tight leading-tight truncate">{ticket.title}</h2>
+              <h2 className="text-xl sm:text-3xl font-black text-slate-800 dark:text-white tracking-tight leading-tight truncate pr-4" title={ticket.title}>{ticket.title}</h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 relative z-10 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-3 relative z-10 w-full sm:w-auto justify-between sm:justify-end shrink-0">
             <div className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border flex items-center gap-2 text-[10px] sm:text-xs font-black uppercase tracking-widest ${
               ticket.priority === 'High' || ticket.priority === 'Critical' ? 'bg-red-500/10 text-red-550 dark:text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
             }`}>
@@ -401,7 +481,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-slate-50/30 dark:bg-black/20">
           
           {/* Left Column: Details & History (Scrollable) */}
-          <div className="flex-[1.5] overflow-y-auto p-4 sm:p-10 space-y-8 sm:space-y-12 custom-scrollbar border-r border-slate-200 dark:border-white/5 order-2 lg:order-1">
+          <div className="flex-[1.5] overflow-y-auto p-4 sm:p-10 pb-24 lg:pb-32 space-y-8 sm:space-y-12 custom-scrollbar border-r border-slate-200 dark:border-white/5 order-2 lg:order-1">
             
             {/* Context Grid */}
             <div className={`grid grid-cols-1 sm:grid-cols-2 ${status === 'Resolved' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
@@ -706,25 +786,29 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                      const senderName = remark.addedBy?.name || 'System';
                      const isMe = String(remark.addedBy?._id || remark.addedBy) === String(user?._id || user?.id);
                      
+                     // Align internal notes to the left to group with other logs/notes, keeping public support on the right.
+                     const alignLeft = !isConsultantRole || remark.isInternal;
+                     const isBlueBubble = isConsultantRole && !remark.isInternal;
+                     
                      return (
-                       <div key={index} className={`flex ${isConsultantRole ? 'justify-end' : 'justify-start'} w-full group animate-in fade-in slide-in-from-bottom-6 duration-700`}>
-                         <div className={`max-w-[85%] flex flex-col ${isConsultantRole ? 'items-end' : 'items-start'}`}>
-                           <div className={`flex items-center gap-3 mb-3 px-4 ${isConsultantRole ? 'flex-row-reverse' : 'flex-row'}`}>
+                       <div key={index} className={`flex ${alignLeft ? 'justify-start' : 'justify-end'} w-full group animate-in fade-in slide-in-from-bottom-6 duration-700`}>
+                         <div className={`max-w-[85%] flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
+                           <div className={`flex items-center gap-3 mb-3 px-4 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
                              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center text-[12px] font-black shadow-2xl transition-all group-hover:rotate-6 ${
                                remark.isInternal
-                                 ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white ring-4 ring-amber-500/10'
+                                 ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-black ring-4 ring-amber-500/10'
                                  : isConsultantRole ? 'bg-blue-600 text-white ring-4 ring-blue-600/10' : 'bg-slate-350 dark:bg-slate-700 text-slate-850 dark:text-slate-300 ring-4 ring-slate-700/10'
                              }`}>
                                {senderName[0].toUpperCase()}
                              </div>
-                             <div className={`flex flex-col ${isConsultantRole ? 'items-end' : 'items-start'}`}>
-                                <div className={`flex items-center gap-1.5 ${isConsultantRole ? 'flex-row-reverse' : 'flex-row'}`}>
-                                  <span className={`text-[10px] font-black uppercase tracking-widest ${remark.isInternal ? 'text-amber-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                             <div className={`flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
+                                <div className={`flex items-center gap-1.5 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
+                                  <span className={`text-[10px] font-black uppercase tracking-widest ${remark.isInternal ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
                                     {senderName}
                                   </span>
                                   <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
                                     remark.isInternal
-                                      ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                                       : isConsultantRole 
                                         ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' 
                                         : 'bg-red-500/10 text-[#ED1B2F] border border-red-500/20'
@@ -739,18 +823,18 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                            
                            <div className={`relative p-6 rounded-[2.5rem] shadow-sm dark:shadow-2xl border transition-all duration-500 hover:scale-[1.01] ${
                              remark.isInternal
-                               ? 'bg-gradient-to-br from-amber-600 to-orange-600 border-amber-500/30 text-white rounded-tr-none shadow-amber-900/20'
+                               ? 'bg-amber-50/60 dark:bg-[#1c160e]/50 border-amber-200/50 dark:border-white/5 border-l-4 border-l-amber-500 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-amber-900/5'
                                : isConsultantRole ? 'bg-blue-600 border-blue-400/30 text-white rounded-tr-none' : 'bg-slate-200 dark:bg-[#1e293b] border-slate-300 dark:border-white/5 text-slate-800 dark:text-slate-200 rounded-tl-none'
                            }`}>
                              <p className="text-[15px] leading-relaxed whitespace-pre-wrap font-medium">{remark.text}</p>
                              
                              {remark.attachments?.length > 0 && (
-                                <div className={`mt-6 pt-5 border-t space-y-3 ${isConsultantRole ? 'border-white/20' : 'border-slate-300 dark:border-white/5'}`}>
+                                <div className={`mt-6 pt-5 border-t space-y-3 ${isBlueBubble ? 'border-white/20' : 'border-slate-300 dark:border-white/5'}`}>
                                   {remark.attachments.map((file, fIdx) => (
                                     <div key={fIdx} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all w-full text-left ${
-                                      isConsultantRole ? 'bg-white/10 border-white/10 hover:bg-white/20' : 'bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30'
+                                      isBlueBubble ? 'bg-white/10 border-white/10 hover:bg-white/20' : 'bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30'
                                     }`}>
-                                      <div className={`p-2.5 rounded-xl ${isConsultantRole ? 'bg-white/20' : 'bg-blue-500/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400'}`}>
+                                      <div className={`p-2.5 rounded-xl ${isBlueBubble ? 'bg-white/20' : 'bg-blue-500/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400'}`}>
                                         <File size={16} strokeWidth={2.5} />
                                       </div>
                                       <div className="flex-1 min-w-0">
@@ -761,7 +845,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                         <button 
                                           onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
                                           className={`p-2 rounded-xl transition-all border ${
-                                            isConsultantRole 
+                                            isBlueBubble 
                                               ? 'bg-white/5 hover:bg-white/20 border-white/10 text-white' 
                                               : 'bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-blue-500/20 border-slate-200 dark:border-white/5 text-slate-505 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400'
                                           } cursor-pointer`}
@@ -772,7 +856,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                                         <button 
                                           onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
                                           className={`p-2 rounded-xl transition-all border ${
-                                            isConsultantRole 
+                                            isBlueBubble 
                                               ? 'bg-white/5 hover:bg-white/20 border-white/10 text-white' 
                                               : 'bg-slate-100 hover:bg-slate-250 dark:bg-white/5 dark:hover:bg-emerald-500/20 border-slate-200 dark:border-white/5 text-slate-505 dark:text-slate-400 hover:text-emerald-655 dark:hover:text-emerald-400'
                                           } cursor-pointer`}
@@ -791,12 +875,84 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                      );
                   })
                 )}
+                
+                {/* Conversation Reply Input — visible for all non-Resolved tickets */}
+                {ticket.status !== 'Resolved' && (
+                  <div className="border-t border-slate-200 dark:border-white/10 pt-6 mt-6 space-y-4 relative z-10">
+                    <div className="flex flex-wrap items-center gap-3 mb-1.5 ml-1">
+                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Reply Destination / Visibility</span>
+                      <div className="flex bg-slate-200/50 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
+                        <button
+                          type="button"
+                          onClick={() => setIsInternal(false)}
+                          className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                            !isInternal
+                              ? 'bg-blue-650 text-white shadow-md'
+                              : 'text-slate-550 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                          }`}
+                        >
+                          <MessageSquare size={11} /> Public Update
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsInternal(true)}
+                          className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isInternal
+                              ? 'bg-amber-500 text-black shadow-md font-bold'
+                              : 'text-slate-555 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                          }`}
+                        >
+                          <Lock size={11} /> Internal Note
+                        </button>
+                      </div>
+                    </div>
+                    <div className="relative group/reply">
+                      <textarea 
+                        value={reply} 
+                        onChange={(e) => setReply(e.target.value)} 
+                        rows={4} 
+                        placeholder={isInternal ? "Share confidential notes or collaborate with other assigned consultants (hidden from client)..." : "Provide conversational updates to the user..."} 
+                        className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] px-6 py-5 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none transition-all resize-none shadow-sm pr-32 ${
+                          isInternal 
+                            ? 'border-amber-500/30 focus:border-amber-500/60 shadow-amber-500/5 bg-amber-500/[0.01] dark:bg-amber-500/[0.02]' 
+                            : 'border-slate-200 dark:border-white/10 focus:border-blue-500/50'
+                        }`}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            handleSendRemark();
+                          }
+                        }}
+                      />
+                      <div className="absolute right-4 bottom-4 flex items-center gap-2">
+                        {remarkFiles.length > 0 && <span className={`text-[9px] px-2.5 py-1 rounded-full font-black animate-pulse ${isInternal ? 'bg-amber-500 text-black' : 'bg-blue-600 text-white'}`}>{remarkFiles.length} FILES</span>}
+                        <button type="button" onClick={() => remarkFileInputRef.current?.click()} className="p-3 bg-slate-100 hover:bg-slate-200 dark:bg-[#1e293b]/50 dark:hover:bg-blue-500/20 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-lg cursor-pointer" title="Attach Files">
+                          <UploadCloud size={20} />
+                        </button>
+                        <input type="file" ref={remarkFileInputRef} multiple className="hidden" onChange={handleRemarkFileChange} />
+                        <button 
+                          type="button"
+                          onClick={handleSendRemark}
+                          disabled={isSendingChat || (!reply.trim() && remarkFiles.length === 0)}
+                          className={`p-3 rounded-2xl transition-all shadow-lg disabled:opacity-50 cursor-pointer ${
+                            isInternal
+                              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-amber-600/20'
+                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
+                          }`}
+                          title={isInternal ? 'Send Internal Note' : 'Send Message'}
+                        >
+                          {isInternal ? <Lock size={20} /> : <Send size={20} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           </div>
 
           {/* Right Column: Resolution Console & Documents (Scrollable) */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-10 space-y-8 sm:space-y-12 bg-slate-100/60 dark:bg-[#1e293b]/20 custom-scrollbar order-1 lg:order-2 lg:max-h-full max-h-[60vh] lg:h-auto border-b lg:border-b-0 border-slate-200 dark:border-white/5">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-10 pb-24 lg:pb-32 space-y-8 sm:space-y-12 bg-slate-100/60 dark:bg-[#1e293b]/20 custom-scrollbar order-1 lg:order-2 max-h-[60vh] lg:max-h-full border-b lg:border-b-0 border-slate-200 dark:border-white/5">
             
             {/* Status & Effort */}
             <section className="space-y-6">
@@ -809,7 +965,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Lifecycle Status</label>
                   <div className="relative">
-                    <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-[1.2rem] px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all appearance-none cursor-pointer shadow-sm">
+                    <select 
+                      value={status} 
+                      onChange={(e) => setStatus(e.target.value)} 
+                      disabled={ticket.status === 'Resolved'}
+                      className="w-full bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-[1.2rem] px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all appearance-none cursor-pointer shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
                       <option value="Open">Open Protocol</option>
                       <option value="On Hold">On Hold</option>
                       <option value="Cancelled">Cancelled</option>
@@ -833,7 +994,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               <section className="space-y-4 bg-white dark:bg-[#1e293b]/40 p-6 rounded-[2rem] border border-blue-500/25 dark:border-blue-500/20 shadow-sm">
                 <div className="flex items-center gap-3">
                   <Shield size={18} className="text-blue-500 dark:text-blue-400" />
-                  <h3 className="text-xs font-black text-blue-550 dark:text-blue-450 uppercase tracking-[0.2em]">Forwarding Console</h3>
+                  <h3 className="text-xs font-black text-blue-550 dark:text-blue-455 uppercase tracking-[0.2em]">Forwarding Console</h3>
                 </div>
                 
                 <div className="space-y-4">
@@ -842,15 +1003,73 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                     <select
                       value={selectedAdminId}
                       onChange={(e) => setSelectedAdminId(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer"
+                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer disabled:opacity-60"
+                      disabled={adminsLoading && admins.length === 0}
                     >
-                      <option value="">-- Choose Consultant --</option>
+                      <option value="">
+                        {adminsLoading && admins.length === 0 ? 'Loading consultants...' : '-- Choose Consultant --'}
+                      </option>
                       {admins.filter(a => (a._id || a.id) !== (user?._id || user?.id) && a.status === 'active').map(consultant => (
                         <option key={consultant._id || consultant.id} value={consultant._id || consultant.id} className="bg-white dark:bg-[#0f172a] text-slate-800 dark:text-white">
                           {consultant.name} ({consultant.email})
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="flex flex-col gap-2 relative">
+                    <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">CC Consultants (Optional)</label>
+                    <div 
+                      onClick={() => setForwardCcDropdownOpen(!forwardCcDropdownOpen)}
+                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold flex justify-between items-center cursor-pointer select-none"
+                    >
+                      <span>
+                        {forwardCcConsultantIds.length === 0 
+                          ? '-- Choose CCs --' 
+                          : `${forwardCcConsultantIds.length} Selected`}
+                      </span>
+                      <ChevronRight size={14} className={`text-slate-400 transition-transform ${forwardCcDropdownOpen ? 'rotate-90' : ''}`} />
+                    </div>
+                    {forwardCcDropdownOpen && (
+                      <div className="absolute top-[100%] left-0 right-0 mt-1 bg-white dark:bg-[#1a202c] border border-slate-200 dark:border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
+                        {admins.filter(a => {
+                          const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
+                          return a.status === 'active' && 
+                            String(a._id || a.id) !== String(assignedId) && 
+                            String(a._id || a.id) !== String(selectedAdminId);
+                        }).map(c => {
+                          const isChecked = forwardCcConsultantIds.includes(c._id || c.id);
+                          return (
+                            <label 
+                              key={c._id || c.id} 
+                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer select-none text-[11px]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setForwardCcConsultantIds(prev => prev.includes(c._id || c.id) ? prev.filter(id => id !== (c._id || c.id)) : [...prev, (c._id || c.id)]);
+                                }}
+                                className="rounded text-blue-600 focus:ring-0 cursor-pointer"
+                              />
+                              <span className="truncate text-slate-700 dark:text-slate-200">{c.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Additional CC Email Addresses (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. boss@company.com, tech@company.com"
+                      value={forwardCcEmails}
+                      onChange={(e) => setForwardCcEmails(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:border-blue-500/50 shadow-inner placeholder:text-slate-400"
+                    />
+                    <span className="text-[9px] text-slate-500 font-medium ml-1">Separate multiple email addresses with commas.</span>
                   </div>
                   
                   <div className="flex flex-col gap-2">
@@ -870,9 +1089,17 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         if (!selectedAdminId) return alert('Please select a consultant first.');
                         setIsForwarding(true);
                         try {
-                          await forwardTicket(rawTicketId, selectedAdminId, forwardRemarks);
+                          const ccs = [...forwardCcConsultantIds];
+                          if (forwardCcEmails.trim()) {
+                            const extraEmails = forwardCcEmails.split(',').map(e => e.trim()).filter(e => e.includes('@'));
+                            ccs.push(...extraEmails);
+                          }
+                          await forwardTicket(rawTicketId, selectedAdminId, forwardRemarks, ccs);
                           setSelectedAdminId('');
                           setForwardRemarks('');
+                          setForwardCcConsultantIds([]);
+                          setForwardCcEmails('');
+                          setForwardCcDropdownOpen(false);
                           alert('Ticket forwarded successfully!');
                         } catch (err) {
                           alert(err.response?.data?.message || 'Failed to forward ticket.');
@@ -897,6 +1124,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   <Activity size={18} className="text-emerald-500 dark:text-emerald-400" />
                   <h3 className="text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">Effort Logging</h3>
                 </div>
+                {/* Always allow adding effort entries, even on resolved tickets */}
                 <button onClick={addWorkLogRow} className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-black text-emerald-650 dark:text-emerald-400 uppercase tracking-widest transition-all cursor-pointer">
                   <Plus size={12} strokeWidth={3} /> Append Entry
                 </button>
@@ -905,23 +1133,74 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               <div className="space-y-3">
                 <AnimatePresence>
                   {workLogEntries.map((entry, idx) => (
-                    <motion.div key={idx} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="flex gap-3 items-center group">
-                      <input type="date" value={entry.date} onChange={e => updateWorkLogRow(idx, 'date', e.target.value)} className="flex-[2] bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner" />
-                      <div className="relative flex-1">
-                        <input type="number" min="0" placeholder="Hours" value={entry.hours} onChange={e => updateWorkLogRow(idx, 'hours', e.target.value)} className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-4 pr-10 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">hrs</span>
+                    <motion.div 
+                      key={idx} 
+                      initial={{ opacity: 0, x: 20 }} 
+                      animate={{ opacity: 1, x: 0 }} 
+                      exit={{ opacity: 0, scale: 0.95 }} 
+                      className="flex flex-wrap gap-2.5 items-center w-full bg-slate-100/30 dark:bg-white/[0.02] sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-slate-200/50 dark:border-white/5 sm:border-0"
+                    >
+                      {/* Date Input with fixed width to prevent it from crowding time inputs */}
+                      <div className="w-[135px] sm:w-[145px] shrink-0">
+                        <input 
+                          type="date" 
+                          value={entry.date} 
+                          onChange={e => updateWorkLogRow(idx, 'date', e.target.value)} 
+                          className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-3 py-3 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner" 
+                        />
                       </div>
-                      <div className="relative flex-1">
-                        <input type="number" min="0" max="59" placeholder="Mins" value={entry.minutes} onChange={e => updateWorkLogRow(idx, 'minutes', e.target.value)} className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-4 pr-10 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase">mins</span>
+                      
+                      {/* Hours & Minutes inputs grouped so they share remaining space dynamically */}
+                      <div className="flex-1 min-w-[145px] flex gap-2">
+                        <div className="relative flex-1">
+                          <input 
+                            type="number" 
+                            min="0" 
+                            placeholder="Hours" 
+                            value={entry.hours} 
+                            onChange={e => updateWorkLogRow(idx, 'hours', e.target.value)} 
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-3 pr-8 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right placeholder:text-slate-405" 
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">hrs</span>
+                        </div>
+                        <div className="relative flex-1">
+                          <input 
+                            type="number" 
+                            min="0" 
+                            max="59" 
+                            placeholder="Mins" 
+                            value={entry.minutes} 
+                            onChange={e => updateWorkLogRow(idx, 'minutes', e.target.value)} 
+                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-3 pr-8 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right placeholder:text-slate-405" 
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">mins</span>
+                        </div>
                       </div>
-                      <button onClick={() => removeWorkLogRow(idx)} disabled={workLogEntries.length === 1} className="p-3 text-slate-500 hover:text-red-600 disabled:opacity-0 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer">
+                      
+                      {/* Trash Button */}
+                      <button 
+                        onClick={() => removeWorkLogRow(idx)} 
+                        disabled={workLogEntries.length === 1} 
+                        className="p-3 text-slate-500 hover:text-red-600 disabled:opacity-0 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer shrink-0"
+                        title="Remove Log Entry"
+                      >
                         <Trash2 size={18} />
                       </button>
                     </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
+
+              {/* Quick save button for resolved tickets — only submits workLogs */}
+              {ticket.status === 'Resolved' && validEntries.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSaveWorkLogsOnly}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-2xl text-[11px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest transition-all cursor-pointer"
+                >
+                  <Activity size={14} /> Save Effort Hours
+                </button>
+              )}
             </section>
 
             {/* Resolution Form */}
@@ -930,70 +1209,93 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                 <label className={`text-[10px] font-black uppercase tracking-widest ml-1 flex items-center gap-2 ${status === 'Resolved' ? 'text-emerald-500' : 'text-slate-500'}`}>
                   {status === 'Resolved' && <CheckCircle size={14} />} Final Technical Solution {status === 'Resolved' && '*'}
                 </label>
-                <textarea 
-                  value={solution} 
-                  onChange={(e) => setSolution(e.target.value)} 
-                  rows={5} 
-                  placeholder="Comprehensive summary of the permanent fix..." 
-                  className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] px-6 py-5 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none transition-all resize-none shadow-sm ${
-                    status === 'Resolved' ? 'border-emerald-500/30 focus:border-emerald-500 shadow-emerald-500/5' : 'border-slate-200 dark:border-white/5 focus:border-blue-500/50'
-                  }`}
-                />
-              </div>
+                
+                <div className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] p-6 space-y-4 focus-within:border-blue-500/50 transition-all shadow-sm ${
+                  status === 'Resolved' ? 'border-emerald-500/30 focus:border-emerald-500 shadow-emerald-500/5' : 'border-slate-200 dark:border-white/5 focus-within:border-blue-500/50'
+                }`}>
+                  <textarea 
+                    value={solution} 
+                    onChange={(e) => setSolution(e.target.value)} 
+                    disabled={ticket.status === 'Resolved'}
+                    rows={4} 
+                    placeholder="Comprehensive summary of the permanent fix..." 
+                    className="w-full bg-transparent border-0 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  
+                  {/* File Upload Trigger integrated inside the box */}
+                  {ticket.status !== 'Resolved' && (
+                    <div className="border-t border-slate-200 dark:border-white/5 pt-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-wider">Solution Attachments</span>
+                        <button 
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl text-[10px] font-black text-blue-605 dark:text-blue-405 uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
+                        >
+                          <UploadCloud size={14} /> Attach Files
+                        </button>
+                        <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileChange} />
+                      </div>
+                      
+                      {adminFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {adminFiles.map((f, i) => (
+                            <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-lg uppercase tracking-tighter animate-in zoom-in">
+                              <span className="truncate max-w-[150px]">{f.name}</span>
+                              <button 
+                                type="button" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveAdminFile(i);
+                                }}
+                                className="text-white/85 hover:text-white hover:scale-110 transition-all font-black text-xs cursor-pointer ml-1"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                             <div className="space-y-3">
-                 <div className="flex items-center justify-between mb-1.5">
-                   <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Communication / Internal Collaboration</label>
-                   <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer select-none uppercase tracking-wider transition-colors hover:text-amber-500">
-                     <input 
-                       type="checkbox" 
-                       checked={isInternal} 
-                       onChange={(e) => setIsInternal(e.target.checked)}
-                       className="rounded bg-[#111620] border-white/20 text-amber-500 focus:ring-amber-500" 
-                     />
-                     <span className="flex items-center gap-1">
-                       <Lock size={10} />
-                       Internal Collaboration Note (Hidden from Client)
-                     </span>
-                   </label>
-                 </div>
-                 <div className="relative group/reply">
-                   <textarea 
-                     value={reply} 
-                     onChange={(e) => setReply(e.target.value)} 
-                     rows={4} 
-                     placeholder={isInternal ? "Share technical notes or collaborate with other assigned consultants..." : "Provide conversational updates to the user..."} 
-                     className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] px-6 py-5 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none transition-all resize-none shadow-sm pr-24 ${
-                       isInternal 
-                         ? 'border-amber-500/30 focus:border-amber-500/60 shadow-amber-500/5' 
-                         : 'border-slate-200 dark:border-white/10 focus:border-blue-500/50'
-                     }`}
-                   />
-                   <div className="absolute right-4 bottom-4 flex items-center gap-2">
-                     {remarkFiles.length > 0 && <span className={`text-[9px] px-2.5 py-1 rounded-full font-black animate-pulse ${isInternal ? 'bg-amber-500 text-black' : 'bg-blue-600 text-white'}`}>{remarkFiles.length} FILES</span>}
-                     <button type="button" onClick={() => remarkFileInputRef.current?.click()} className="p-3 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-lg cursor-pointer">
-                       <UploadCloud size={20} />
-                     </button>
-                     <input type="file" ref={remarkFileInputRef} multiple className="hidden" onChange={handleRemarkFileChange} />
-                   </div>
-                 </div>
-               </div>
-
-            </section>
-
-            {/* Supporting Media */}
-            <section className="space-y-4">
-              <label className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-widest ml-1">Knowledge Base Attachments</label>
-              <div onClick={() => fileInputRef.current?.click()} className="group w-full bg-slate-50 dark:bg-black/40 border-2 border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500/50 rounded-[2.5rem] p-10 text-center cursor-pointer transition-all hover:bg-blue-600/[0.02]">
-                <div className="w-16 h-16 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-505 dark:text-blue-400 mx-auto mb-4 group-hover:scale-110 group-hover:rotate-6 transition-all shadow-md">
-                  <UploadCloud size={32} />
+                  {/* Show already uploaded Knowledge Base Attachments inside the card for Resolved tickets */}
+                  {ticket.status === 'Resolved' && (ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
+                    <div className="border-t border-slate-200 dark:border-white/5 pt-4 flex flex-col gap-3">
+                      <span className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-wider">Knowledge Base Attachments</span>
+                      <div className="flex flex-col gap-2">
+                        {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file, i) => (
+                          <div key={file._id || i} className="bg-slate-100/50 dark:bg-black/25 border border-slate-200/50 dark:border-white/5 p-3 rounded-xl flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="p-2 bg-emerald-500/10 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                                <File size={16} strokeWidth={2.5} />
+                              </div>
+                              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">{file.originalName || file.filename}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button 
+                                type="button"
+                                onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
+                                className="p-2 bg-white dark:bg-black/40 hover:bg-slate-50 dark:hover:bg-black/60 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer flex items-center justify-center"
+                                title="View Attachment"
+                              >
+                                <Eye size={16} />
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
+                                className="p-2 bg-white dark:bg-black/40 hover:bg-slate-50 dark:hover:bg-black/60 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer flex items-center justify-center"
+                                title="Download Attachment"
+                              >
+                                <Download size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <p className="text-slate-800 dark:text-white font-bold text-sm tracking-wide group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">Synchronize Support Data</p>
-                <p className="text-[10px] text-slate-505 dark:text-slate-655 font-black uppercase tracking-widest mt-2">All assets accepted • 10MB Threshold</p>
-                {adminFiles.length > 0 && <div className="mt-6 flex flex-wrap justify-center gap-2">
-                   {adminFiles.map((f, i) => <span key={i} className="px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-lg uppercase tracking-tighter animate-in zoom-in">{f.name}</span>)}
-                </div>}
-                <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileChange} />
               </div>
             </section>
           </div>
@@ -1014,11 +1316,38 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
            </div>
 
            <div className="flex gap-3 sm:gap-4 w-full sm:w-auto">
-            <button onClick={onClose} className="flex-1 sm:flex-none px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] cursor-pointer">Discard</button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleSubmit} className="flex-[2] sm:flex-none px-6 sm:px-12 py-3 sm:py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-2 sm:gap-3 transition-all shadow-[0_20px_40px_rgba(37,99,235,0.2)] cursor-pointer">
-              Transmit <Send size={16} strokeWidth={3} className="hidden sm:block" /> <Send size={14} strokeWidth={3} className="sm:hidden" />
-            </motion.button>
-           </div>
+              <button 
+                onClick={onClose} 
+                className="flex-1 sm:flex-none px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] cursor-pointer"
+              >
+                {ticket.status === 'Resolved' ? 'Close' : 'Discard'}
+              </button>
+              {ticket.status !== 'Resolved' && (
+                <motion.button 
+                  whileHover={{ scale: 1.02 }} 
+                  whileTap={{ scale: 0.98 }} 
+                  onClick={handleSubmit} 
+                  className={`flex-[2] sm:flex-none px-6 sm:px-12 py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-2 sm:gap-3 transition-all cursor-pointer ${
+                    isInternal
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-[0_20px_40px_rgba(245,158,11,0.2)]'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_20px_40px_rgba(37,99,235,0.2)]'
+                  }`}
+                >
+                  {isInternal ? 'Submit Note' : 'Submit'}
+                  {isInternal ? (
+                    <>
+                      <Lock size={16} strokeWidth={3} className="hidden sm:block" />
+                      <Lock size={14} strokeWidth={3} className="sm:hidden" />
+                    </>
+                  ) : (
+                    <>
+                      <Send size={16} strokeWidth={3} className="hidden sm:block" />
+                      <Send size={14} strokeWidth={3} className="sm:hidden" />
+                    </>
+                  )}
+                </motion.button>
+              )}
+            </div>
         </div>
       </motion.div>
 
@@ -1041,12 +1370,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 40 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-4 sm:inset-10 md:inset-20 z-[100] flex flex-col bg-[#0f172a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden font-sans"
+              className="fixed inset-4 sm:inset-10 md:inset-16 z-[100] flex flex-col bg-[#111620] border border-white/10 rounded-[2.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden font-sans"
             >
               {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-white/5 bg-[#1e293b]/50 flex justify-between items-center shrink-0">
+              <div className="px-8 py-5 border-b border-white/5 bg-[#181f2b] flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-3">
-                  <File size={20} className="text-blue-400" />
+                  <File size={22} className="text-blue-500" />
                   <span className="text-[14px] font-black text-white truncate max-w-xs sm:max-w-md uppercase tracking-wider">{previewFile.filename}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1059,7 +1388,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                       a.click();
                       document.body.removeChild(a);
                     }}
-                    className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
+                    className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-455 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
                     title="Download File"
                   >
                     <Download size={18} />
@@ -1069,7 +1398,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                       window.URL.revokeObjectURL(previewFile.url);
                       setPreviewFile(null);
                     }}
-                    className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-500 rounded-xl transition-all border border-white/5 cursor-pointer"
+                    className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-455 hover:text-red-400 rounded-xl transition-all border border-white/5 cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -1077,30 +1406,36 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               </div>
 
               {/* Modal Content */}
-              <div className="flex-1 overflow-auto p-6 flex items-center justify-center bg-slate-950/20">
+              <div className="flex-1 overflow-auto p-8 flex flex-col items-center justify-center bg-[#020617]">
                 {previewFile.mimeType?.startsWith('image/') ? (
-                  <img
-                    src={previewFile.url}
-                    alt={previewFile.filename}
-                    className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
-                  />
+                  <div className="flex-1 flex items-center justify-center">
+                    <img
+                      src={previewFile.url}
+                      alt={previewFile.filename}
+                      className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
+                    />
+                  </div>
                 ) : previewFile.mimeType === 'application/pdf' ? (
                   <iframe
                     src={previewFile.url}
-                    className="w-full h-full min-h-[60vh] rounded-2xl border border-white/5 bg-white"
+                    className="w-full h-full min-h-[65vh] rounded-2xl border border-white/5 bg-white"
                     title={previewFile.filename}
                   />
                 ) : previewFile.excelData ? (
-                  renderExcelTable(previewFile.excelData)
+                  <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
+                    {renderExcelTable(previewFile.excelData)}
+                  </div>
                 ) : previewFile.filename?.toLowerCase()?.endsWith('.csv') ? (
-                  renderCSVTable(previewFile.textContent)
+                  <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
+                    {renderCSVTable(previewFile.textContent)}
+                  </div>
                 ) : previewFile.textContent ? (
-                  <pre className="w-full max-w-4xl text-left bg-slate-900 text-slate-350 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
+                  <pre className="w-full text-left bg-[#111620] text-slate-300 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
                     {previewFile.textContent}
                   </pre>
                 ) : (
                   <div className="text-center p-12 bg-white/[0.02] border border-white/5 rounded-3xl max-w-md">
-                    <File size={48} className="text-slate-655 mx-auto mb-4 opacity-50" />
+                    <File size={48} className="text-slate-600 mx-auto mb-4 opacity-50" />
                     <p className="text-[13px] font-black text-slate-400 uppercase tracking-widest mb-4">Inline Preview Unavailable</p>
                     <p className="text-[11px] text-slate-500 font-medium mb-6">This file type ({previewFile.mimeType || 'unknown'}) cannot be displayed inline.</p>
                     <button

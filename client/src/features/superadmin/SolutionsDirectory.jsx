@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Filter, Download, Copy, CheckCircle, TrendingUp, BarChart3, FileText, MessageSquare, Clock, Tag, BookOpen, ChevronDown } from 'lucide-react';
+import { Search, Filter, Download, Copy, CheckCircle, TrendingUp, BarChart3, FileText, MessageSquare, Clock, Tag, BookOpen, ChevronDown, Eye } from 'lucide-react';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useDepartmentStore } from '../../store/useDepartmentStore';
 import { Button } from '../../components/Button';
@@ -122,6 +122,57 @@ export default function SolutionsDirectory() {
   const allPriorities = useMemo(() => Array.from(new Set(resolvedTickets.map(t => t.priority?.toLowerCase()).filter(Boolean))), [resolvedTickets]);
 
   const toggleExpand = (id) => setExpandedSolutions(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const handleDownloadAttachment = async (e, ticketId, attachmentId, filename) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      const token = sessionStorage.getItem('token');
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${ticketId}/attachment/${attachmentId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 5000);
+    } catch (err) {
+      console.error('Error downloading file:', err);
+      alert('Failed to download file'); 
+    }
+  };
+
+  const handleViewAttachment = async (e, ticketId, attachmentId, filename) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      const token = sessionStorage.getItem('token');
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${ticketId}/view/${attachmentId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to load preview');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('Error viewing file:', err);
+      alert('Failed to view file'); 
+    }
+  };
 
   const copySolution = async (id, sol) => {
     try {
@@ -339,16 +390,48 @@ export default function SolutionsDirectory() {
                       <p className="text-[13px] text-slate-300 relative z-10 leading-relaxed font-medium">{ticket.description}</p>
                     </div>
 
-                    <div className="bg-[#181f2b] p-4 rounded-2xl border border-white/5 shadow-inner relative overflow-hidden group-hover:border-emerald-500/20 transition-colors min-h-[100px]">
-                      <div className="flex items-center justify-between mb-3 relative z-10">
-                        <div className="flex items-center gap-2 text-emerald-400">
-                           <CheckCircle size={14} /> <span className="text-[11px] font-bold uppercase tracking-widest">Recovery Protocol</span>
+                    <div className="bg-[#181f2b] p-4 rounded-2xl border border-white/5 shadow-inner relative overflow-hidden group-hover:border-emerald-500/20 transition-colors min-h-[100px] flex flex-col gap-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-3 relative z-10">
+                          <div className="flex items-center gap-2 text-emerald-400">
+                             <CheckCircle size={14} /> <span className="text-[11px] font-bold uppercase tracking-widest">Recovery Protocol</span>
+                          </div>
+                          {rawSol.length > 200 && (
+                            <button onClick={()=>toggleExpand(ticket.id)} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest bg-white/5 px-2 py-1 rounded shadow-sm">{isExpanded ? 'COLLAPSE LOG' : 'EXPAND LOG'}</button>
+                          )}
                         </div>
-                        {rawSol.length > 200 && (
-                          <button onClick={()=>toggleExpand(ticket.id)} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest bg-white/5 px-2 py-1 rounded shadow-sm">{isExpanded ? 'COLLAPSE LOG' : 'EXPAND LOG'}</button>
-                        )}
+                        <p className="text-[13px] text-slate-300 relative z-10 leading-relaxed font-medium whitespace-pre-wrap">{solutionPreview}</p>
                       </div>
-                      <p className="text-[13px] text-slate-300 relative z-10 leading-relaxed font-medium whitespace-pre-wrap">{solutionPreview}</p>
+
+                      {/* Knowledge Base Attachments list inside the card */}
+                      {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
+                        <div className="border-t border-white/5 pt-3 mt-1 relative z-10">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Solution Attachments</span>
+                          <div className="flex flex-col gap-1.5">
+                            {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file, fileIdx) => (
+                              <div key={file._id || fileIdx} className="bg-black/25 border border-white/5 px-3 py-2 rounded-xl flex items-center justify-between shadow-sm">
+                                <span className="text-[11px] text-slate-300 truncate max-w-[180px] font-semibold">{file.originalName || file.filename}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span 
+                                    onClick={(e) => handleViewAttachment(e, ticket.id, file._id, file.originalName || file.filename)}
+                                    className="p-1.5 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                    title="View Attachment"
+                                  >
+                                    <Eye size={12} />
+                                  </span>
+                                  <span 
+                                    onClick={(e) => handleDownloadAttachment(e, ticket.id, file._id, file.originalName || file.filename)}
+                                    className="p-1.5 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                    title="Download Attachment"
+                                  >
+                                    <Download size={12} />
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

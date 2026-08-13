@@ -2,19 +2,55 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Download, Search, RefreshCw, ShieldAlert,
-  X, Users, Building, ClipboardList, Clock, Briefcase, Award, Star, Settings, Calendar
+  X, Users, Building, ClipboardList, Clock, Briefcase, Award, Star, Settings, Calendar,
+  BarChart2, PieChart as PieIcon, TrendingUp, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import api from '../../api/mockAxios';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useThemeStore } from '../../store/useThemeStore';
 import Badge from '../../components/ui/Badge';
 import ConsultantDashboard from '../consultant/ConsultantDashboard';
+import { 
+  ResponsiveContainer, PieChart, Pie, Cell, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend 
+} from 'recharts';
+
+const PRIORITY_COLORS = {
+  critical: '#ef4444', // Red
+  high: '#f97316',     // Orange
+  medium: '#eab308',   // Yellow
+  low: '#3b82f6'       // Blue
+};
+
+const CHART_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#6366f1'];
+
+const formatResolutionTime = (minutes) => {
+  if (!minutes || minutes <= 0) return '—';
+  const hrs = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  if (hrs > 0) {
+    const hrStr = hrs === 1 ? 'hr' : 'hrs';
+    const minStr = mins === 1 ? 'min' : 'mins';
+    return `${hrs} ${hrStr} and ${mins} ${minStr}`;
+  }
+  const minStr = mins === 1 ? 'min' : 'mins';
+  return `${mins} ${minStr}`;
+};
 
 export default function SystemReports() {
   const { user } = useAuthStore();
+  const { resolvedTheme } = useThemeStore();
+  const isDark = resolvedTheme === 'dark';
   const [activeTab, setActiveTab] = useState('consultant'); // 'consultant' | 'client' | 'overall'
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   
+  // Timeframe Picker States
+  const [timeframe, setTimeframe] = useState('all'); // 'all' | 'weekly' | 'monday' | 'custom-day' | 'custom-range'
+  const [customDay, setCustomDay] = useState(new Date().toISOString().split('T')[0]);
+  const [customRangeStart, setCustomRangeStart] = useState('');
+  const [customRangeEnd, setCustomRangeEnd] = useState('');
+
   // Data States
   const [consultantData, setConsultantData] = useState([]);
   const [clientData, setClientData] = useState([]);
@@ -27,16 +63,80 @@ export default function SystemReports() {
 
   const isSuperAdmin = user?.role === 'Super Admin' || user?.role === 'superadmin';
 
+  // Compute startDate and endDate parameters based on selected timeframe
+  const dateFilters = useMemo(() => {
+    const now = new Date();
+    let start = null;
+    let end = null;
+
+    if (timeframe === 'weekly') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      d.setHours(0, 0, 0, 0);
+      start = d.toISOString();
+      end = now.toISOString();
+    } else if (timeframe === 'monday') {
+      const d = new Date();
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      monday.setHours(0, 0, 0, 0);
+      
+      const endOfMonday = new Date(monday);
+      endOfMonday.setHours(23, 59, 59, 999);
+      
+      start = monday.toISOString();
+      end = endOfMonday.toISOString();
+    } else if (timeframe === 'custom-day') {
+      if (customDay) {
+        const d = new Date(customDay);
+        d.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(d);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        start = d.toISOString();
+        end = endOfDay.toISOString();
+      }
+    } else if (timeframe === 'custom-range') {
+      if (customRangeStart && customRangeEnd) {
+        const s = new Date(customRangeStart);
+        s.setHours(0, 0, 0, 0);
+        const e = new Date(customRangeEnd);
+        e.setHours(23, 59, 59, 999);
+        
+        start = s.toISOString();
+        end = e.toISOString();
+      }
+    }
+
+    return { startDate: start, endDate: end };
+  }, [timeframe, customDay, customRangeStart, customRangeEnd]);
+
+  const getMostRecentMonday = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    return monday.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
   const fetchData = async () => {
     setIsLoading(true);
     setError('');
+    
+    const params = {};
+    if (dateFilters.startDate && dateFilters.endDate) {
+      params.startDate = dateFilters.startDate;
+      params.endDate = dateFilters.endDate;
+    }
+
     try {
       // 1. Fetch stats summary for all consultants
-      const consultantRes = await api.get('/consultant-stats');
+      const consultantRes = await api.get('/consultant-stats', { params });
       setConsultantData(consultantRes.data?.data || []);
 
       // 2. Fetch all clients in the system
-      const clientRes = await api.get('/clients');
+      const clientRes = await api.get('/clients', { params: { ...params, limit: 1000 } });
       setClientData(clientRes.data?.data || clientRes.data?.clients || []);
 
       // 3. Fetch dashboard ticket overview stats
@@ -44,7 +144,7 @@ export default function SystemReports() {
       setTicketOverviewStats(ticketOverviewRes.data?.overview || null);
 
       // 4. Fetch detailed tickets SLA & rating stats
-      const ticketDetailedRes = await api.get('/tickets/dashboard/stats');
+      const ticketDetailedRes = await api.get('/tickets/dashboard/stats', { params });
       setTicketDetailedStats(ticketDetailedRes.data || null);
     } catch (err) {
       console.error('Failed to load system reports:', err);
@@ -56,9 +156,12 @@ export default function SystemReports() {
 
   useEffect(() => {
     if (isSuperAdmin) {
+      if (timeframe === 'custom-range' && (!customRangeStart || !customRangeEnd)) {
+        return;
+      }
       fetchData();
     }
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, dateFilters]);
 
   // Overall Report Metrics Compilation
   const overallData = useMemo(() => {
@@ -81,6 +184,22 @@ export default function SystemReports() {
     const avgRating = ticketDetailedStats?.avgRating || 0;
     const totalRatings = ticketDetailedStats?.totalRatings || 0;
 
+    // Extra metrics extracted from stats / clients / consultants
+    const priorityBreakdown = ticketDetailedStats?.priorityBreakdown || { critical: 0, high: 0, medium: 0, low: 0 };
+    const statusBreakdown = ticketDetailedStats?.statusBreakdown || { pending: 0, assigned: 0, resolved: 0, closed: 0, hold: 0, cancelled: 0 };
+    const departmentBreakdown = ticketDetailedStats?.departmentBreakdown || [];
+
+    const erpBreakdown = clientData.reduce((acc, c) => {
+      const erp = c.erpDetails?.erpName || 'Unspecified';
+      acc[erp] = (acc[erp] || 0) + 1;
+      return acc;
+    }, {});
+    const erpBreakdownArray = Object.entries(erpBreakdown).map(([name, value]) => ({ name, value }));
+
+    const topConsultants = [...consultantData]
+      .sort((a, b) => (b.tickets?.resolved || 0) - (a.tickets?.resolved || 0))
+      .slice(0, 5);
+
     return {
       totalClients,
       activeClients,
@@ -96,9 +215,36 @@ export default function SystemReports() {
       resolvedTickets,
       avgResolutionTime,
       avgRating,
-      totalRatings
+      totalRatings,
+      priorityBreakdown,
+      statusBreakdown,
+      departmentBreakdown,
+      erpBreakdownArray,
+      topConsultants
     };
   }, [clientData, consultantData, ticketOverviewStats, ticketDetailedStats]);
+
+  const priorityChartData = useMemo(() => {
+    const p = overallData.priorityBreakdown || {};
+    return [
+      { name: 'Critical', value: p.critical || 0, color: PRIORITY_COLORS.critical },
+      { name: 'High', value: p.high || 0, color: PRIORITY_COLORS.high },
+      { name: 'Medium', value: p.medium || 0, color: PRIORITY_COLORS.medium },
+      { name: 'Low', value: p.low || 0, color: PRIORITY_COLORS.low }
+    ].filter(item => item.value > 0);
+  }, [overallData.priorityBreakdown]);
+
+  const departmentChartData = useMemo(() => {
+    return (overallData.departmentBreakdown || [])
+      .filter(d => d.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [overallData.departmentBreakdown]);
+
+  const erpChartData = useMemo(() => {
+    return (overallData.erpBreakdownArray || [])
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [overallData.erpBreakdownArray]);
 
   // Filtered Lists for tables
   const filteredConsultants = useMemo(() => {
@@ -176,13 +322,36 @@ export default function SystemReports() {
         ['Consultants', 'Total Support Work Hours Logged', overallData.totalHours || 0],
         ['Consultants', 'Total Accrued Work Billing Cost (INR)', overallData.totalCost || 0],
         ['Tickets', 'Total Tickets Registered', overallData.totalTickets || 0],
-        ['Tickets', 'Assigned Tickets', overallData.assignedTickets || 0],
         ['Tickets', 'Pending Tickets', overallData.pendingTickets || 0],
-        ['Tickets', 'Resolved & Closed Tickets', overallData.resolvedTickets || 0],
+        ['Tickets', 'Assigned Tickets', overallData.assignedTickets || 0],
+        ['Tickets', 'Resolved Tickets', overallData.statusBreakdown?.resolved || 0],
+        ['Tickets', 'Closed Tickets', overallData.statusBreakdown?.closed || 0],
+        ['Tickets', 'On Hold Tickets', overallData.statusBreakdown?.hold || 0],
+        ['Tickets', 'Cancelled Tickets', overallData.statusBreakdown?.cancelled || 0],
         ['SLA & Efficiency', 'Average Ticket Resolution Time (minutes)', overallData.avgResolutionTime || 0],
+        ['SLA & Efficiency', 'Average Ticket Resolution Time (Formatted)', formatResolutionTime(overallData.avgResolutionTime)],
         ['SLA & Efficiency', 'Average Customer Satisfaction Rating (1-5)', overallData.avgRating || 0],
         ['SLA & Efficiency', 'Total Tickets Rated by Customers', overallData.totalRatings || 0],
+        ['Priority Breakdown', 'Critical Tickets', overallData.priorityBreakdown?.critical || 0],
+        ['Priority Breakdown', 'High Tickets', overallData.priorityBreakdown?.high || 0],
+        ['Priority Breakdown', 'Medium Tickets', overallData.priorityBreakdown?.medium || 0],
+        ['Priority Breakdown', 'Low Tickets', overallData.priorityBreakdown?.low || 0],
       ];
+
+      // Add ERPs distribution
+      overallData.erpBreakdownArray?.forEach(item => {
+        rows.push(['ERP Breakdown', `Clients running ${item.name}`, item.value]);
+      });
+
+      // Add Department distribution
+      overallData.departmentBreakdown?.forEach(item => {
+        rows.push(['Department Tickets', `Tickets in ${item.name}`, item.count]);
+      });
+
+      // Add top performing consultants
+      overallData.topConsultants?.forEach((c, idx) => {
+        rows.push(['Top Performers', `Rank ${idx+1}: ${c.name} (${c.department})`, `${c.tickets?.resolved || 0} resolved tickets`]);
+      });
     }
 
     const csvContent = '\uFEFF' + [
@@ -201,7 +370,22 @@ export default function SystemReports() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', filename);
+
+    let nameWithoutExt = filename.replace('.csv', '');
+    let fileSuffix = '';
+    if (timeframe === 'weekly') {
+      fileSuffix = '_weekly';
+    } else if (timeframe === 'monday') {
+      fileSuffix = `_monday_${dateFilters.startDate?.split('T')[0]}`;
+    } else if (timeframe === 'custom-day') {
+      fileSuffix = `_day_${customDay}`;
+    } else if (timeframe === 'custom-range') {
+      fileSuffix = `_range_${customRangeStart}_to_${customRangeEnd}`;
+    } else {
+      fileSuffix = '_lifetime';
+    }
+
+    link.setAttribute('download', `${nameWithoutExt}${fileSuffix}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -367,6 +551,71 @@ export default function SystemReports() {
             <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
             {isLoading ? 'Loading...' : 'Sync Logs'}
           </button>
+        </div>
+      </div>
+
+      {/* Timeframe Scope Selector */}
+      <div className="bg-slate-50/80 dark:bg-[#111620]/80 border border-slate-200 dark:border-white/10 p-5 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10 shadow-lg backdrop-blur-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="text-red-500" size={18} />
+            <span className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Report Timeframe Scope</span>
+          </div>
+          <select
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value)}
+            className="bg-slate-100 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2 text-slate-800 dark:text-white text-xs font-bold focus:outline-none focus:ring-1 focus:ring-red-500/50 cursor-pointer"
+          >
+            <option value="all">📊 All-Time / Lifetime</option>
+            <option value="weekly">📅 Weekly (Last 7 Days)</option>
+            <option value="monday">🗓️ Monday Report (Most Recent)</option>
+            <option value="custom-day">🎯 Custom Day (Single Date)</option>
+            <option value="custom-range">🎛️ Custom Date Range</option>
+          </select>
+        </div>
+
+        {/* Dynamic date pickers based on selected timeframe */}
+        <div className="flex flex-wrap items-center gap-3">
+          {timeframe === 'monday' && (
+            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-white/5 border border-white/5 rounded-xl px-4 py-2 animate-in fade-in duration-200">
+              Selected Monday: <span className="text-red-500">{getMostRecentMonday()}</span>
+            </div>
+          )}
+          
+          {timeframe === 'custom-day' && (
+            <div className="flex items-center gap-2 animate-in slide-in-from-right-4 duration-300">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Select Date:</span>
+              <input
+                type="date"
+                value={customDay}
+                onChange={(e) => setCustomDay(e.target.value)}
+                className="bg-slate-100 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2 text-slate-800 dark:text-white text-xs font-bold outline-none focus:border-red-500/50"
+              />
+            </div>
+          )}
+
+          {timeframe === 'custom-range' && (
+            <div className="flex flex-wrap items-center gap-3 animate-in slide-in-from-right-4 duration-300">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">From:</span>
+                <input
+                  type="date"
+                  value={customRangeStart}
+                  onChange={(e) => setCustomRangeStart(e.target.value)}
+                  className="bg-slate-100 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2 text-slate-800 dark:text-white text-xs font-bold outline-none focus:border-red-500/50"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">To:</span>
+                <input
+                  type="date"
+                  value={customRangeEnd}
+                  onChange={(e) => setCustomRangeEnd(e.target.value)}
+                  className="bg-slate-100 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-4 py-2 text-slate-800 dark:text-white text-xs font-bold outline-none focus:border-red-500/50"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -573,7 +822,8 @@ export default function SystemReports() {
 
               {/* TAB 3: OVERALL SYSTEM REPORT */}
               {activeTab === 'overall' && (
-                <div className="space-y-8 max-w-4xl mx-auto">
+                <div className="space-y-8 max-w-6xl mx-auto">
+                  {/* Tab Title & Actions */}
                   <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
                     <div>
                       <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight uppercase">System Operational Summary</h3>
@@ -587,92 +837,299 @@ export default function SystemReports() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Clients Section */}
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Clients summary card */}
                     <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4">
-                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Building size={14} className="text-red-500 dark:text-red-400" /> Client Orgs & Accounts</h4>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Total Registered Orgs</span>
-                          <span className="font-black text-slate-800 dark:text-white">{overallData.totalClients}</span>
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Building size={14} className="text-red-500 dark:text-red-400" /> Client Orgs
+                      </h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-xs font-semibold">
+                          <span className="text-slate-500 dark:text-slate-400">Total Registered</span>
+                          <span className="font-bold text-slate-800 dark:text-white">{overallData.totalClients}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Active Subscriptions</span>
-                          <span className="font-black text-emerald-600 dark:text-emerald-400">{overallData.activeClients}</span>
+                        <div className="flex justify-between items-center text-xs font-semibold">
+                          <span className="text-slate-500 dark:text-slate-400">Active AMC</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{overallData.activeClients}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Suspended Client Orgs</span>
-                          <span className="font-black text-red-500 dark:text-red-400">{overallData.suspendedClients}</span>
+                        <div className="flex justify-between items-center text-xs font-semibold">
+                          <span className="text-slate-500 dark:text-slate-400">Suspended Orgs</span>
+                          <span className="font-bold text-red-500 dark:text-red-400">{overallData.suspendedClients}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm border-t border-slate-200 dark:border-white/5 pt-3">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Total Registered Client Users</span>
-                          <span className="font-black text-slate-700 dark:text-slate-200">{overallData.totalClientEmployees}</span>
+                        <div className="flex justify-between items-center text-xs font-semibold border-t border-slate-250 dark:border-white/5 pt-2">
+                          <span className="text-slate-500 dark:text-slate-400">Total Users</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-200">{overallData.totalClientEmployees}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Support Team Section */}
+                    {/* Support team capacity card */}
                     <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4">
-                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Users size={14} className="text-yellow-600 dark:text-yellow-400" /> Support Team & Capacity</h4>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Total Registered Consultants</span>
-                          <span className="font-black text-slate-800 dark:text-white">{overallData.totalConsultants}</span>
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Users size={14} className="text-yellow-600 dark:text-yellow-400" /> Support Team
+                      </h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-xs font-semibold">
+                          <span className="text-slate-500 dark:text-slate-400">Total Consultants</span>
+                          <span className="font-bold text-slate-800 dark:text-white">{overallData.totalConsultants}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Total Support Hours Logged</span>
-                          <span className="font-black text-yellow-600 dark:text-yellow-400">{overallData.totalHours} hrs</span>
+                        <div className="flex justify-between items-center text-xs font-semibold">
+                          <span className="text-slate-500 dark:text-slate-400">Total Work Hours</span>
+                          <span className="font-bold text-yellow-600 dark:text-yellow-400">{overallData.totalHours} hrs</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm border-t border-slate-200 dark:border-white/5 pt-3">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Accrued Work Billing Cost</span>
+                        <div className="flex justify-between items-center text-xs font-semibold border-t border-slate-250 dark:border-white/5 pt-2">
+                          <span className="text-slate-500 dark:text-slate-400">Accrued Billing Cost</span>
                           <span className="font-black text-emerald-600 dark:text-emerald-400">₹{overallData.totalCost.toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Ticket volume metrics */}
-                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4 md:col-span-2">
-                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><ClipboardList size={14} className="text-blue-500 dark:text-blue-400" /> Support Incident Tickets</h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Total Incident Tickets</span>
-                          <span className="text-2xl font-black text-slate-800 dark:text-white block mt-1">{overallData.totalTickets}</span>
-                        </div>
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Pending</span>
-                          <span className="text-2xl font-black text-yellow-600 dark:text-yellow-400 block mt-1">{overallData.pendingTickets}</span>
-                        </div>
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Assigned / In Progress</span>
-                          <span className="text-2xl font-black text-blue-600 dark:text-blue-400 block mt-1">{overallData.assignedTickets}</span>
-                        </div>
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Resolved & Closed</span>
-                          <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 block mt-1">{overallData.resolvedTickets}</span>
-                        </div>
+                    {/* SLA Response card */}
+                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                          <Clock size={14} className="text-indigo-500 dark:text-indigo-400" /> Avg. Resolution Duration
+                        </h4>
+                        <span className="text-lg font-black text-slate-800 dark:text-white block tracking-tight leading-none mt-2">
+                          {formatResolutionTime(overallData.avgResolutionTime)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-semibold mt-4">
+                        Average time to solve resolved support incident tickets
                       </div>
                     </div>
 
-                    {/* SLA & Rating Metrics */}
-                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4 md:col-span-2">
-                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Clock size={14} className="text-indigo-500 dark:text-indigo-400" /> SLA Response & Satisfaction Rating</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Avg. Resolution Duration</span>
-                          <span className="text-xl font-black text-slate-800 dark:text-white block mt-1">{overallData.avgResolutionTime > 0 ? `${overallData.avgResolutionTime} mins` : '—'}</span>
-                        </div>
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Satisfaction Rating</span>
-                          <span className="text-xl font-black text-yellow-500 block mt-1 flex items-center justify-center gap-1.5 mt-1">
-                            <Star size={16} className="fill-yellow-400 text-yellow-400" />
-                            {overallData.avgRating > 0 ? `${overallData.avgRating.toFixed(2)} / 5.0` : '—'}
-                          </span>
-                        </div>
-                        <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Tickets Rated</span>
-                          <span className="text-xl font-black text-slate-700 dark:text-slate-200 block mt-1">{overallData.totalRatings} rated</span>
-                        </div>
+                    {/* Satisfaction card */}
+                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                          <Star size={14} className="text-yellow-500 fill-yellow-500/20" /> Satisfaction Rating
+                        </h4>
+                        <span className="text-lg font-black text-yellow-500 block flex items-center gap-1.5 mt-2">
+                          <Star size={20} className="fill-yellow-400 text-yellow-400" />
+                          {overallData.avgRating > 0 ? `${overallData.avgRating.toFixed(2)} / 5.0` : '—'}
+                        </span>
                       </div>
+                      <div className="text-[10px] text-slate-500 font-semibold mt-4">
+                        Based on {overallData.totalRatings} customer reviews
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Incident Tickets Detailed Breakdown */}
+                  <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4">
+                    <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <ClipboardList size={14} className="text-blue-500 dark:text-blue-400" /> Incident Tickets Status Breakdown
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Total</span>
+                        <span className="text-xl font-black text-slate-800 dark:text-white block mt-1">{overallData.totalTickets}</span>
+                      </div>
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block text-yellow-600">Pending</span>
+                        <span className="text-xl font-black text-yellow-600 dark:text-yellow-400 block mt-1">{overallData.statusBreakdown?.pending || 0}</span>
+                      </div>
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block text-blue-500">Assigned</span>
+                        <span className="text-xl font-black text-blue-600 dark:text-blue-400 block mt-1">{overallData.statusBreakdown?.assigned || 0}</span>
+                      </div>
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block text-emerald-500">Resolved</span>
+                        <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 block mt-1">{overallData.statusBreakdown?.resolved || 0}</span>
+                      </div>
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block text-teal-600">Closed</span>
+                        <span className="text-xl font-black text-teal-600 dark:text-teal-400 block mt-1">{overallData.statusBreakdown?.closed || 0}</span>
+                      </div>
+                      <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block text-purple-500">On Hold</span>
+                        <span className="text-xl font-black text-purple-650 dark:text-purple-400 block mt-1">{overallData.statusBreakdown?.hold || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Interactive Visual Charts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Priority Pie Chart */}
+                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl flex flex-col h-[320px]">
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-4">
+                        <PieIcon size={14} className="text-orange-500" /> Ticket Priorities
+                      </h4>
+                      {priorityChartData.length === 0 ? (
+                        <div className="flex-1 flex items-center justify-center text-slate-500 text-xs italic">No priority metrics.</div>
+                      ) : (
+                        <div className="flex-1 w-full relative">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={priorityChartData}
+                                cx="50%"
+                                cy="45%"
+                                innerRadius={45}
+                                outerRadius={70}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {priorityChartData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Legend 
+                                verticalAlign="bottom" 
+                                height={36} 
+                                iconSize={8}
+                                formatter={(v) => <span className="text-slate-600 dark:text-slate-400 text-[10px] font-semibold uppercase">{v}</span>} 
+                              />
+                              <RechartsTooltip
+                                contentStyle={{ 
+                                  backgroundColor: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255, 255, 255, 0.95)', 
+                                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', 
+                                  borderRadius: '12px',
+                                  color: isDark ? '#fff' : '#0f172a',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}
+                                itemStyle={{ color: isDark ? '#fff' : '#0f172a' }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ERP distribution */}
+                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl flex flex-col h-[320px]">
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-4">
+                        <Building size={14} className="text-emerald-500" /> Clients by ERP System
+                      </h4>
+                      {erpChartData.length === 0 ? (
+                        <div className="flex-1 flex items-center justify-center text-slate-500 text-xs italic">No client ERP data.</div>
+                      ) : (
+                        <div className="flex-1 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={erpChartData} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#ffffff0d" : "rgba(0,0,0,0.06)"} horizontal={false} />
+                              <XAxis type="number" stroke="#64748b" axisLine={false} tickLine={false} tick={{ fontSize: 9 }} />
+                              <YAxis type="category" dataKey="name" stroke="#64748b" axisLine={false} tickLine={false} tick={{ fontSize: 9 }} width={70} />
+                              <RechartsTooltip
+                                contentStyle={{ 
+                                  backgroundColor: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255, 255, 255, 0.95)', 
+                                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', 
+                                  borderRadius: '12px',
+                                  color: isDark ? '#fff' : '#0f172a',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}
+                                itemStyle={{ color: isDark ? '#fff' : '#0f172a' }}
+                              />
+                              <Bar dataKey="value" name="Clients Count" fill="#10b981" radius={[0, 4, 4, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Department distribution */}
+                    <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl flex flex-col h-[320px]">
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-4">
+                        <BarChart2 size={14} className="text-blue-500" /> Tickets by Department
+                      </h4>
+                      {departmentChartData.length === 0 ? (
+                        <div className="flex-1 flex items-center justify-center text-slate-500 text-xs italic">No ticket department distribution.</div>
+                      ) : (
+                        <div className="flex-1 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={departmentChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#ffffff0d" : "rgba(0,0,0,0.06)"} vertical={false} />
+                              <XAxis dataKey="name" stroke="#64748b" axisLine={false} tickLine={false} tick={{ fontSize: 9 }} />
+                              <YAxis stroke="#64748b" axisLine={false} tickLine={false} tick={{ fontSize: 9 }} />
+                              <RechartsTooltip
+                                contentStyle={{ 
+                                  backgroundColor: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255, 255, 255, 0.95)', 
+                                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', 
+                                  borderRadius: '12px',
+                                  color: isDark ? '#fff' : '#0f172a',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}
+                                itemStyle={{ color: isDark ? '#fff' : '#0f172a' }}
+                              />
+                              <Bar dataKey="count" name="Tickets count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Top Consultants Table */}
+                  <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
+                      <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Award size={14} className="text-yellow-500" /> Top Performing Consultants
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">Sorted by Resolved Tickets</span>
+                    </div>
+
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead>
+                          <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-white/5">
+                            <th className="p-3 text-center w-16">Rank</th>
+                            <th className="p-3">Consultant</th>
+                            <th className="p-3">Department</th>
+                            <th className="p-3 text-center">Resolved Tickets</th>
+                            <th className="p-3 text-center">Total Hours</th>
+                            <th className="p-3 text-right">Total Billing Cost</th>
+                            <th className="p-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-white/[0.02] text-xs">
+                          {overallData.topConsultants?.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" className="p-4 text-center text-slate-500 italic">No consultant data available.</td>
+                            </tr>
+                          ) : (
+                            overallData.topConsultants?.map((c, idx) => (
+                              <tr 
+                                key={c._id} 
+                                onClick={() => setSelectedConsultantId(c._id)}
+                                className="hover:bg-black/[0.01] dark:hover:bg-white/[0.02] cursor-pointer transition-all group"
+                              >
+                                <td className="p-3 text-center">
+                                  <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-black text-[11px] ${
+                                    idx === 0 ? 'bg-yellow-500/20 text-yellow-500' :
+                                    idx === 1 ? 'bg-slate-400/20 text-slate-300' :
+                                    idx === 2 ? 'bg-amber-600/20 text-amber-500' :
+                                    'bg-slate-200/20 text-slate-450'
+                                  }`}>
+                                    {idx + 1}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-bold text-slate-800 dark:text-white">
+                                  <div>{c.name}</div>
+                                  <div className="text-[10px] text-slate-500 font-medium">{c.email}</div>
+                                </td>
+                                <td className="p-3 text-slate-600 dark:text-slate-300 font-semibold">{c.department || 'Unassigned'}</td>
+                                <td className="p-3 text-center font-black text-emerald-500">{c.tickets?.resolved || 0}</td>
+                                <td className="p-3 text-center font-bold text-slate-700 dark:text-slate-300">{c.totalWorkHours || 0} hrs</td>
+                                <td className="p-3 text-right font-black text-emerald-400">₹{(c.totalCost || 0).toLocaleString('en-IN')}</td>
+                                <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleExportIndividual(c._id, c.name)}
+                                    className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer inline-flex items-center gap-1"
+                                    title="Export Performance Report"
+                                  >
+                                    <Download size={10} /> Excel
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>

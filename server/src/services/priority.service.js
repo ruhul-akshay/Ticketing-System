@@ -1,8 +1,9 @@
-import Priority from '../../models/Priority.js';
+import Priority from '../models/Priority.js';
+import { AppError } from '../utils/AppError.js';
 
 /* =========================
    GET ALL
-========================= */
+ ========================= */
 export const getAllPriorities = async () => {
   let priorities = await Priority.find({ isActive: true }).sort({ level: 1 });
   if (priorities.length === 0) {
@@ -22,14 +23,17 @@ export const getAllPriorities = async () => {
 
 /* =========================
    CREATE
-========================= */
+ ========================= */
 export const createPriority = async (data) => {
+  if (!data.name?.trim()) {
+    throw new AppError('Priority name is required', 400);
+  }
   const exists = await Priority.findOne({
-    name: { $regex: `^${data.name}$`, $options: 'i' }
+    name: { $regex: `^${data.name.trim()}$`, $options: 'i' }
   });
 
   if (exists) {
-    throw new Error('Priority already exists');
+    throw new AppError('Priority already exists', 409);
   }
 
   return await Priority.create(data);
@@ -37,18 +41,26 @@ export const createPriority = async (data) => {
 
 /* =========================
    UPDATE
-========================= */
+ ========================= */
 export const updatePriority = async (id, data) => {
-  return await Priority.findByIdAndUpdate(id, data, { new: true });
+  const priority = await Priority.findByIdAndUpdate(id, data, { new: true });
+  if (!priority) {
+    throw new AppError('Priority not found', 404);
+  }
+  return priority;
 };
 
 /* =========================
    DELETE (Soft Delete)
-========================= */
+ ========================= */
 export const deletePriority = async (id) => {
-  return await Priority.findByIdAndUpdate(
+  const priority = await Priority.findByIdAndUpdate(
     id,
     { isActive: false },
     { new: true }
   );
+  if (!priority) {
+    throw new AppError('Priority not found', 404);
+  }
+  return priority;
 };

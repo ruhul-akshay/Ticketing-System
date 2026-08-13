@@ -56,7 +56,7 @@ const autoProvisionClientUser = async (client, contactEmail) => {
   console.log(`✅ AUTO-PROVISIONED CLIENT USER: ${email} for client ${client.name}`);
 };
 
-export const getClients = async (currentUser, { status, erpName, search, sortBy = 'createdAt', sortOrder = 'desc', page = 1, limit = 10 }) => {
+export const getClients = async (currentUser, { status, erpName, search, sortBy = 'createdAt', sortOrder = 'desc', page = 1, limit = 1000, startDate, endDate }) => {
   const query = {};
 
   if (currentUser.role === 'clientuser') {
@@ -115,9 +115,15 @@ export const getClients = async (currentUser, { status, erpName, search, sortBy 
 
       const userIds = clientUsers.map(u => u._id);
 
-      const tickets = await Ticket.find({
-        createdBy: { $in: userIds }
-      });
+      const ticketQuery = { createdBy: { $in: userIds } };
+      if (startDate && endDate) {
+        ticketQuery.createdAt = {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        };
+      }
+
+      const tickets = await Ticket.find(ticketQuery);
 
       const resolvedTickets = tickets.filter(t => ['resolved', 'Resolved', 'closed', 'Closed'].includes(t.status));
       const pendingTickets = tickets.filter(t => ['pending', 'Pending', 'open', 'Open'].includes(t.status));
@@ -127,7 +133,9 @@ export const getClients = async (currentUser, { status, erpName, search, sortBy 
       client.resolvedTickets = resolvedTickets.length;
       client.pendingTickets = pendingTickets.length;
       
-      await client.save();
+      if (!startDate || !endDate) {
+        await client.save();
+      }
     } catch (err) {
       console.error(`Error auto-syncing stats for client ${client.name}:`, err);
     }
@@ -263,12 +271,16 @@ export const createClient = async (currentUser, data) => {
     }
   }
 
+  const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+  const initials = await generateClientInitials(name);
+
   const client = new Client({
     name: name.trim(),
     domain: domain.toLowerCase().trim(),
     contactPerson: contactPerson?.trim(),
     contactEmail: contactEmail?.toLowerCase().trim(),
     contactPhone: contactPhone?.trim(),
+    initials,
     erpDetails: erpDetails || {},
     createdBy: currentUser._id,
     updatedBy: currentUser._id,
@@ -302,7 +314,13 @@ export const updateClientPut = async (currentUser, id, data) => {
     throw new Error('Client not found');
   }
 
-  if (name !== undefined) client.name = name.trim();
+  if (name !== undefined && name.trim() !== client.name) {
+    const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+    client.name = name.trim();
+    client.initials = await generateClientInitials(name, client._id);
+  } else if (name !== undefined) {
+    client.name = name.trim();
+  }
   if (contactPerson !== undefined) client.contactPerson = contactPerson?.trim();
   if (contactEmail !== undefined) client.contactEmail = contactEmail?.toLowerCase().trim();
   if (contactPhone !== undefined) client.contactPhone = contactPhone?.trim();
@@ -396,7 +414,13 @@ export const updateClientPatch = async (currentUser, id, data) => {
     throw new Error('Client not found');
   }
 
-  if (name !== undefined && name !== null) client.name = name.trim();
+  if (name !== undefined && name !== null && name.trim() !== client.name) {
+    const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+    client.name = name.trim();
+    client.initials = await generateClientInitials(name, client._id);
+  } else if (name !== undefined && name !== null) {
+    client.name = name.trim();
+  }
   if (contactPerson !== undefined && contactPerson !== null) client.contactPerson = contactPerson.trim();
   if (contactEmail !== undefined && contactEmail !== null) client.contactEmail = contactEmail.toLowerCase().trim();
   if (contactPhone !== undefined && contactPhone !== null) client.contactPhone = contactPhone.trim();
@@ -729,7 +753,7 @@ export const searchClientNames = async (query) => {
   
   return await Client.find(searchQuery)
     .select('name domain')
-    .limit(10)
+    .limit(100)
     .sort({ name: 1 });
 };
 

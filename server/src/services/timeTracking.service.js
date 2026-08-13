@@ -1,6 +1,7 @@
 import Project from '../models/Project.js';
 import Task from '../models/Task.js';
 import TimeEntry from '../models/TimeEntry.js';
+import { AppError } from '../utils/AppError.js';
 
 export const getActiveProjects = async () => {
   return await Project.find({ active: true });
@@ -44,7 +45,7 @@ export const stopTimeTracking = async (userId) => {
   });
 
   if (!activeEntry) {
-    throw new Error('No active task found to stop');
+    throw new AppError('No active task found to stop', 400);
   }
 
   activeEntry.stopTime = new Date();

@@ -1,12 +1,13 @@
-import Department from '../../models/Department.js';
+import Department from '../models/Department.js';
+import { AppError } from '../utils/AppError.js';
 
 /* =========================
    GET ALL DEPARTMENTS
-========================= */
+ ========================= */
 export const getAllDepartments = async (user) => {
   let query = {};
 
-  if ((user.role === 'consultant' || user.role === 'admin') && user.department) {
+  if ((user?.role === 'consultant' || user?.role === 'admin') && user.department) {
     query._id = user.department;
   }
 
@@ -15,14 +16,18 @@ export const getAllDepartments = async (user) => {
 
 /* =========================
    CREATE DEPARTMENT
-========================= */
+ ========================= */
 export const createDepartment = async ({ name, description, categories = [] }) => {
+  if (!name?.trim()) {
+    throw new AppError('Department name is required', 400);
+  }
+
   const exists = await Department.findOne({
-    name: { $regex: `^${name}$`, $options: 'i' }
+    name: { $regex: `^${name.trim()}$`, $options: 'i' }
   });
 
   if (exists) {
-    throw new Error('Department already exists');
+    throw new AppError('Department already exists', 409);
   }
 
   return await Department.create({
@@ -34,33 +39,47 @@ export const createDepartment = async ({ name, description, categories = [] }) =
 
 /* =========================
    UPDATE DEPARTMENT
-========================= */
+ ========================= */
 export const updateDepartment = async (id, data) => {
-  return await Department.findByIdAndUpdate(id, data, { new: true });
+  const department = await Department.findByIdAndUpdate(id, data, { new: true });
+  if (!department) {
+    throw new AppError('Department not found', 404);
+  }
+  return department;
 };
 
 /* =========================
    DELETE DEPARTMENT
-========================= */
+ ========================= */
 export const deleteDepartment = async (id) => {
-  return await Department.findByIdAndDelete(id);
+  const department = await Department.findByIdAndDelete(id);
+  if (!department) {
+    throw new AppError('Department not found', 404);
+  }
+  return department;
 };
 
 /* =========================
    ADD CATEGORY
-========================= */
+ ========================= */
 export const addCategory = async (departmentId, categoryData) => {
   const department = await Department.findById(departmentId);
-  if (!department) return null;
+  if (!department) {
+    throw new AppError('Department not found', 404);
+  }
 
   const categoryName = typeof categoryData === 'string' ? categoryData : categoryData?.name;
-  if (!categoryName?.trim()) throw new Error('Category name is required');
+  if (!categoryName?.trim()) {
+    throw new AppError('Category name is required', 400);
+  }
 
   const exists = department.categories.some(
     c => c.toLowerCase() === categoryName.trim().toLowerCase()
   );
 
-  if (exists) throw new Error('Category already exists');
+  if (exists) {
+    throw new AppError('Category already exists', 409);
+  }
 
   department.categories.push(categoryName.trim());
   await department.save();
@@ -70,22 +89,25 @@ export const addCategory = async (departmentId, categoryData) => {
 
 /* =========================
    UPDATE CATEGORY
-========================= */
+ ========================= */
 export const updateCategory = async (departmentId, categoryId, data) => {
   const department = await Department.findById(departmentId);
-  if (!department) return null;
+  if (!department) {
+    throw new AppError('Department not found', 404);
+  }
 
   const newName = typeof data === 'string' ? data : data?.name;
-  if (!newName?.trim()) throw new Error('New category name is required');
+  if (!newName?.trim()) {
+    throw new AppError('New category name is required', 400);
+  }
 
-  // categoryId could be the category name string or an index
   const index = department.categories.findIndex(c => c === categoryId);
   if (index === -1) {
     const idx = parseInt(categoryId, 10);
     if (!isNaN(idx) && idx >= 0 && idx < department.categories.length) {
       department.categories[idx] = newName.trim();
     } else {
-      return 'CATEGORY_NOT_FOUND';
+      throw new AppError('Category not found', 404);
     }
   } else {
     department.categories[index] = newName.trim();
@@ -97,10 +119,12 @@ export const updateCategory = async (departmentId, categoryId, data) => {
 
 /* =========================
    DELETE CATEGORY
-========================= */
+ ========================= */
 export const deleteCategory = async (departmentId, categoryId) => {
   const department = await Department.findById(departmentId);
-  if (!department) return null;
+  if (!department) {
+    throw new AppError('Department not found', 404);
+  }
 
   const index = department.categories.indexOf(categoryId);
   if (index !== -1) {

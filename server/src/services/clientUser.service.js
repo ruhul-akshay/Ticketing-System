@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { sendWelcomeCredentialsEmail } from '../utils/email.js';
 
-export const getAllUsers = async (currentUser, { status, role, clientId, search, page = 1, limit = 20, roleType = 'all' }) => {
+export const getAllUsers = async (currentUser, { status, role, clientId, search, page = 1, limit = 1000, roleType = 'all' }) => {
   const query = {};
   
   if (status && status !== 'all') query.status = status;
@@ -99,7 +99,7 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
   };
 };
 
-export const getUsersByRole = async (currentUser, targetRole, { status, search, page = 1, limit = 20 }) => {
+export const getUsersByRole = async (currentUser, targetRole, { status, search, page = 1, limit = 1000 }) => {
   if (!['clientuser', 'consultant', 'superadmin'].includes(targetRole)) {
     throw new Error('Invalid role specified');
   }
@@ -116,7 +116,7 @@ export const getUsersByRole = async (currentUser, targetRole, { status, search, 
   
   const query = { role: targetRole };
   
-  if ((currentUser.role === 'consultant' || currentUser.role === 'clientuser') && currentUser.client) {
+  if (targetRole === 'clientuser' && currentUser.client) {
     query.client = currentUser.client;
   }
   
@@ -247,6 +247,12 @@ export const createUser = async (currentUser, data) => {
   let finalClientId = clientId;
   let finalClientName = clientName;
   
+  if (currentUser.role === 'clientuser') {
+    if (!currentUser.isPrimaryContact) {
+      throw new Error('Only the primary client account can manage the team');
+    }
+  }
+  
   if (currentUser.role === 'consultant' || currentUser.role === 'clientuser') {
     if (clientId && clientId !== currentUser.client?.toString()) {
       throw new Error('You can only create users for your own client');
@@ -308,6 +314,7 @@ export const createUser = async (currentUser, data) => {
 export const updateUser = async (currentUser, id, data) => {
   const {
     name,
+    email,
     employeeCode,
     clientId,
     clientName,
@@ -318,7 +325,9 @@ export const updateUser = async (currentUser, id, data) => {
     preferences,
     leaveFrom,
     leaveTo,
-    hourlyCost
+    hourlyCost,
+    status,
+    statusReason
   } = data;
   
   const user = await ClientUser.findById(id);
@@ -343,6 +352,9 @@ export const updateUser = async (currentUser, id, data) => {
   }
   
   if (currentUser.role === 'clientuser' && !isSelf) {
+    if (!currentUser.isPrimaryContact) {
+      throw new Error('Only the primary client account can manage the team');
+    }
     if (user.client?._id?.toString() !== currentUser.client?.toString()) {
       throw new Error('You can only update users from your own client');
     }
@@ -379,6 +391,17 @@ export const updateUser = async (currentUser, id, data) => {
     }
   }
   
+  if (email && email.toLowerCase() !== user.email) {
+    const existingWithEmail = await ClientUser.findOne({ 
+      email: email.toLowerCase(),
+      _id: { $ne: id }
+    });
+    if (existingWithEmail) {
+      throw new Error('Email address already in use');
+    }
+    user.email = email.toLowerCase();
+  }
+
   if (employeeCode && employeeCode !== user.employeeCode) {
     const existingWithCode = await ClientUser.findOne({ 
       employeeCode,
@@ -427,6 +450,28 @@ export const updateUser = async (currentUser, id, data) => {
   if (preferences !== undefined) {
     user.preferences = { ...user.preferences, ...preferences };
   }
+  if (data.password) {
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    user.password = hashedPassword;
+  }
+  
+  if (status !== undefined) {
+    let targetStatus = status.toLowerCase();
+    if (targetStatus === 'inactive') targetStatus = 'suspended';
+    
+    if (targetStatus !== user.status) {
+      if (isSelf) {
+        throw new Error('You cannot change your own status');
+      }
+      if (!['active', 'suspended', 'frozen'].includes(targetStatus)) {
+        throw new Error('Invalid status. Must be active, suspended, or frozen');
+      }
+      user.status = targetStatus;
+      user.statusReason = statusReason || 'Updated via Profile';
+      user.statusChangedBy = currentUser._id;
+      user.statusChangedAt = new Date();
+    }
+  }
   
   user.updatedBy = currentUser._id;
   await user.save();
@@ -440,7 +485,12 @@ export const updateUser = async (currentUser, id, data) => {
 };
 
 export const updateUserStatus = async (currentUser, id, { status, statusReason }) => {
-  if (!['active', 'suspended', 'frozen'].includes(status)) {
+  let targetStatus = status ? status.toLowerCase() : '';
+  if (targetStatus === 'inactive') {
+    targetStatus = 'suspended';
+  }
+
+  if (!['active', 'suspended', 'frozen'].includes(targetStatus)) {
     throw new Error('Invalid status. Must be active, suspended, or frozen');
   }
   
@@ -466,6 +516,9 @@ export const updateUserStatus = async (currentUser, id, { status, statusReason }
   }
   
   if (currentUser.role === 'clientuser') {
+    if (!currentUser.isPrimaryContact) {
+      throw new Error('Only the primary client account can manage the team');
+    }
     if (user.client?._id?.toString() !== currentUser.client?.toString()) {
       throw new Error('You can only update users from your own client');
     }
@@ -474,7 +527,7 @@ export const updateUserStatus = async (currentUser, id, { status, statusReason }
     }
   }
   
-  user.status = status;
+  user.status = targetStatus;
   user.statusReason = statusReason || '';
   user.statusChangedBy = currentUser._id;
   user.statusChangedAt = new Date();
@@ -512,6 +565,9 @@ export const resetUserPassword = async (currentUser, id, newPassword) => {
   }
   
   if (currentUser.role === 'clientuser') {
+    if (!currentUser.isPrimaryContact) {
+      throw new Error('Only the primary client account can manage the team');
+    }
     if (user.client?._id?.toString() !== currentUser.client?.toString()) {
       throw new Error('You can only reset passwords for users in your client');
     }
@@ -565,6 +621,9 @@ export const deleteUser = async (currentUser, id) => {
   }
   
   if (currentUser.role === 'clientuser') {
+    if (!currentUser.isPrimaryContact) {
+      throw new Error('Only the primary client account can manage the team');
+    }
     if (user.client?._id?.toString() !== currentUser.client?.toString()) {
       throw new Error('You can only delete users from your own client');
     }

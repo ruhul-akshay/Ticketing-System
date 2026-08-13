@@ -20,9 +20,15 @@ dist-ssr
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
+*.slns
 *.sw?
 
 server.zip
 server/uploads/
+server.zip
+server/uploads/
 
+# Environment files
+.env
+.env.*
+!.env.example

@@ -228,6 +228,36 @@ const ticketSchema = new mongoose.Schema({
     default: null
   },
 
+  /* ===== OPENED BY STATUS ===== */
+  openedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientUser',
+    default: []
+  }],
+
+  /* ===== INTERNAL TICKETS SPECIFIC FIELDS ===== */
+  isInternal: {
+    type: Boolean,
+    default: false
+  },
+  
+  isVisibleToClient: {
+    type: Boolean,
+    default: false
+  },
+
+  client: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client',
+    default: null
+  },
+
+  clientUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientUser',
+    default: null
+  },
+
   /* ===== TIMESTAMPS ===== */
   createdAt: {
     type: Date,
@@ -235,5 +265,28 @@ const ticketSchema = new mongoose.Schema({
   }
 
 });
+
+// ── Database Indexes ──────────────────────────────────────────────────────────
+// These indexes mirror the most common query patterns for tickets.
+// Without indexes, every query does a full collection scan (O(n)), which
+// degrades severely as the ticket count grows into the thousands.
+
+// Most common: filter by status with date ordering (dashboard, kanban, reports)
+ticketSchema.index({ status: 1, createdAt: -1 });
+
+// Consultant's ticket list: "show me my assigned open tickets"
+ticketSchema.index({ assignedTo: 1, status: 1 });
+
+// Client user's ticket list: "show me tickets I created"
+ticketSchema.index({ createdBy: 1, createdAt: -1 });
+
+// Department-level filtering (routing rules, department reports)
+ticketSchema.index({ department: 1, status: 1 });
+
+// Internal vs external ticket filtering (consultant internal tickets)
+ticketSchema.index({ isInternal: 1, status: 1, createdAt: -1 });
+
+// Client-scoped ticket queries
+ticketSchema.index({ client: 1, status: 1 });
 
 export default mongoose.model('Ticket', ticketSchema);

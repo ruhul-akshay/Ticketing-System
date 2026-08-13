@@ -1,41 +1,22 @@
 import * as timeTrackingService from '../services/timeTracking.service.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
-export const getProjects = async (req, res) => {
-  try {
-    const projects = await timeTrackingService.getActiveProjects();
-    res.json(projects);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const getProjects = asyncHandler(async (req, res) => {
+  const projects = await timeTrackingService.getActiveProjects();
+  res.json(projects);
+});
 
-export const getTasks = async (req, res) => {
-  try {
-    const tasks = await timeTrackingService.getProjectTasks(req.params.projectId);
-    res.json(tasks);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const getTasks = asyncHandler(async (req, res) => {
+  const tasks = await timeTrackingService.getProjectTasks(req.params.projectId);
+  res.json(tasks);
+});
 
-export const startTracking = async (req, res) => {
-  try {
-    const entry = await timeTrackingService.startTimeTracking(req.user._id, req.body);
-    res.status(201).json(entry);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const startTracking = asyncHandler(async (req, res) => {
+  const entry = await timeTrackingService.startTimeTracking(req.user._id, req.body);
+  res.status(201).json(entry);
+});
 
-export const stopTracking = async (req, res) => {
-  try {
-    const entry = await timeTrackingService.stopTimeTracking(req.user._id);
-    res.json(entry);
-  } catch (err) {
-    if (err.message === 'No active task found to stop') {
-      res.status(400).json({ message: err.message });
-    } else {
-      res.status(500).json({ message: err.message });
-    }
-  }
-};
+export const stopTracking = asyncHandler(async (req, res) => {
+  const entry = await timeTrackingService.stopTimeTracking(req.user._id);
+  res.json(entry);
+});

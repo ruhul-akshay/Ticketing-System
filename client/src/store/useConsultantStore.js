@@ -11,23 +11,45 @@ export const useConsultantStore = create((set, get) => ({
   },
   isLoading: false,
   error: null,
+  lastFetched: null,        // timestamp of last successful fetch
+  _fetchPromise: null,      // shared in-flight promise to prevent duplicate requests
   
-  fetchConsultants: async () => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await api.get('/client-users/role/consultant');
-      const consultantsData = response.data?.users || response.data?.data || [];
-      const statsData = response.data?.stats || null;
-      
-      set({ 
-        consultants: Array.isArray(consultantsData) ? consultantsData : [],
-        stats: statsData || get().stats,
-        isLoading: false 
-      });
-    } catch (error) {
-      console.error('Failed to fetch consultants:', error);
-      set({ error: error.response?.data?.message || error.message, isLoading: false });
+  fetchConsultants: async ({ force = false } = {}) => {
+    const state = get();
+    const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+    // Return cached data if still fresh and not forced
+    if (!force && state.lastFetched && Date.now() - state.lastFetched < CACHE_TTL_MS && state.consultants.length > 0) {
+      return;
     }
+
+    // If a fetch is already in-flight, return the same promise (deduplication)
+    if (state._fetchPromise) {
+      return state._fetchPromise;
+    }
+
+    set({ isLoading: true, error: null });
+
+    const promise = api.get('/client-users/role/consultant?limit=1000')
+      .then(response => {
+        const consultantsData = response.data?.users || response.data?.data || [];
+        const statsData = response.data?.stats || null;
+        set({
+          consultants: Array.isArray(consultantsData) ? consultantsData : [],
+          stats: statsData || get().stats,
+          isLoading: false,
+          lastFetched: Date.now(),
+          _fetchPromise: null,
+        });
+      })
+      .catch(error => {
+        console.error('Failed to fetch consultants:', error);
+        set({ error: error.response?.data?.message || error.message, isLoading: false, _fetchPromise: null });
+        throw error;
+      });
+
+    set({ _fetchPromise: promise });
+    return promise;
   },
 
   addConsultant: async (consultantData) => {

@@ -53,6 +53,7 @@ export const sendConsultantTicketAlertEmail = async (ticket) => {
       day  : '2-digit',
       month: 'long',
       year : 'numeric',
+      timeZone: 'Asia/Kolkata'
     });
 
     const clientName =

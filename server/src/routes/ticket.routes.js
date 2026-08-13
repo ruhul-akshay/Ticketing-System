@@ -42,6 +42,7 @@ router.put(
 
 router.post('/:id/feedback', authenticate, ticketController.submitFeedback);
 router.patch('/:id/status', authenticate, authorize('admin', 'superadmin'), ticketController.updateStatus);
+router.patch('/:id/open', authenticate, ticketController.markAsOpened);
 router.post('/:id/remarks', authenticate, ticketController.addRemark);
 router.post('/:id/assign', authenticate, authorize('superadmin'), ticketController.assignTicket);
 router.post('/:id/forward', authenticate, ticketController.forwardTicket);

@@ -1,21 +1,28 @@
 import { create } from 'zustand';
 import api from '../api/mockAxios';
 
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds
+
 const mapTicketFromApi = (t) => {
-  // Normalize status mapped to UI requirements
-  let mappedStatus = 'Open';
-  if (t.status?.toLowerCase() === 'pending' || t.status?.toLowerCase() === 'assigned') mappedStatus = 'Open';
-  else if (t.status?.toLowerCase() === 'resolved') mappedStatus = 'Resolved';
-  else if (t.status?.toLowerCase() === 'cancelled') mappedStatus = 'Cancelled';
-  else if (t.status?.toLowerCase() === 'hold' || t.status?.toLowerCase() === 'on hold') mappedStatus = 'On Hold';
+  // Normalize status to UI-facing values
+  let mappedStatus;
+  const rawStatus = t.status?.toLowerCase();
+  if (rawStatus === 'pending' || rawStatus === 'assigned') mappedStatus = 'Open';
+  else if (rawStatus === 'resolved') mappedStatus = 'Resolved';
+  else if (rawStatus === 'cancelled') mappedStatus = 'Cancelled';
+  else if (rawStatus === 'hold' || rawStatus === 'on hold') mappedStatus = 'On Hold';
   else mappedStatus = t.status ? (t.status.charAt(0).toUpperCase() + t.status.slice(1)) : 'Open';
 
   // Normalize priority
-  const mappedPriority = t.priority ? (t.priority.charAt(0).toUpperCase() + t.priority.slice(1)) : 'Medium';
+  const mappedPriority = t.priority
+    ? t.priority.charAt(0).toUpperCase() + t.priority.slice(1)
+    : 'Medium';
 
   return {
     id: t._id || t.id,
-    ticketNumber: t.ticketNumber || `T-${Math.floor(Math.random()*1000)}`,
+    // Use the server-assigned ticketNumber; never use Math.random() as a fallback
+    // (random values cause non-deterministic React keys and duplicate IDs)
+    ticketNumber: t.ticketNumber || null,
     title: t.title,
     description: t.description,
     status: mappedStatus,
@@ -34,30 +41,63 @@ const mapTicketFromApi = (t) => {
     assignee: (t.assignedTo && t.assignedTo.role !== 'superadmin' && t.assignedTo.name) ? t.assignedTo.name : null,
     createdAt: t.createdAt,
     original: t,
+    remarks: t.remarks || [],
     workLogs: t.workLogs || [],
     attachments: t.attachments || [],
     adminAttachments: t.adminAttachments || [],
-    supportingDocuments: t.supportingDocuments || [],
-    assignmentHistory: t.assignmentHistory || []
+    assignmentHistory: t.assignmentHistory || [],
+    openedBy: t.openedBy || []
   };
 };
 
-export const useTicketStore = create((set) => ({
+export const useTicketStore = create((set, get) => ({
   tickets: [],
   isLoading: false,
   error: null,
-  
-  fetchTickets: async () => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await api.get('/tickets');
-      const ticketsData = Array.isArray(response.data) ? response.data : (response.data.data || []);
-      const mappedTickets = ticketsData.map(mapTicketFromApi);
-      set({ tickets: mappedTickets, isLoading: false });
-    } catch (error) {
-      console.error('Failed to fetch tickets:', error);
-      set({ error: error.message, isLoading: false });
+  lastFetched: null,      // timestamp of last successful fetch
+  _fetchPromise: null,    // shared in-flight promise for deduplication
+
+  fetchTickets: async ({ force = false } = {}) => {
+    const state = get();
+
+    // Return cached data if still fresh and not forced
+    if (
+      !force &&
+      state.lastFetched &&
+      Date.now() - state.lastFetched < CACHE_TTL_MS &&
+      state.tickets.length > 0
+    ) {
+      return;
     }
+
+    // Deduplicate concurrent in-flight fetches
+    if (state._fetchPromise) {
+      return state._fetchPromise;
+    }
+
+    set({ isLoading: true, error: null });
+
+    const promise = api
+      .get('/tickets')
+      .then((response) => {
+        const ticketsData = Array.isArray(response.data)
+          ? response.data
+          : response.data.data || [];
+        set({
+          tickets: ticketsData.map(mapTicketFromApi),
+          isLoading: false,
+          lastFetched: Date.now(),
+          _fetchPromise: null,
+        });
+      })
+      .catch((error) => {
+        console.error('[Tickets] Fetch failed:', error);
+        set({ error: error.message, isLoading: false, _fetchPromise: null });
+        throw error;
+      });
+
+    set({ _fetchPromise: promise });
+    return promise;
   },
   
   addTicket: async (ticketPayload) => {
@@ -163,6 +203,7 @@ export const useTicketStore = create((set) => ({
       }
     } catch (error) {
       console.error('Failed to update ticket status', error);
+      throw error;
     }
   },
 
@@ -204,6 +245,20 @@ export const useTicketStore = create((set) => ({
     } catch (error) {
       console.error('Failed to delete ticket:', error);
       throw error;
+    }
+  },
+
+  markTicketAsOpened: async (id) => {
+    try {
+      const response = await api.patch(`/tickets/${id}/open`);
+      const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
+      set((state) => ({
+        tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
+      }));
+      return true;
+    } catch (error) {
+      console.error('Failed to mark ticket as opened:', error);
+      return false;
     }
   }
 }));

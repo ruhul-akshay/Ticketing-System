@@ -88,6 +88,7 @@ export const sendTicketResolvedEmail = async (to, ticket) => {
     day   : '2-digit',
     month : 'long',
     year  : 'numeric',
+    timeZone: 'Asia/Kolkata'
   });
 
   const subject = `[Resolved] Ticket ${ticket.ticketNumber}: ${ticket.title}`;

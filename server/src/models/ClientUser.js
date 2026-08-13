@@ -69,6 +69,9 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
+  previousLastLogin: {
+    type: Date
+  },
 
   isFirstLogin: {
     type: Boolean,

@@ -1,6 +1,6 @@
 import express from 'express';
-import { authenticate, authorize } from '../../middleware/auth.js';
-import * as controller from './priority.controller.js';
+import { authenticate, authorize } from '../middleware/auth.js';
+import * as controller from '../controllers/priority.controller.js';
 
 const router = express.Router();
 
