@@ -76,6 +76,8 @@ export const errorHandler = (err, req, res, next) => { // eslint-disable-line no
   if (req.headers.origin) {
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
   res.status(statusCode).json({

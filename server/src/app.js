@@ -28,15 +28,18 @@ const app = express();
 app.use(requestId);
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-app.use(
-  cors({
-    origin:         (origin, cb) => cb(null, true),   // Allow all origins (credentials support)
-    credentials:    true,
-    methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-    maxAge:         86400,
-  })
-);
+const corsOptions = {
+  origin: (origin, cb) => cb(null, true),   // Allow all origins (credentials support)
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['*'],
+  exposedHeaders: ['*'],
+  optionsSuccessStatus: 200,   // Return 200 OK for preflight OPTIONS to prevent proxies from stripping CORS headers
+  maxAge: 86400,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // ── Trust Proxy ───────────────────────────────────────────────────────────────
 app.set('trust proxy', 1);
