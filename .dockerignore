@@ -1,0 +1,26 @@
+# macOS junk files
+__MACOSX
+._*
+.DS_Store
+**/.DS_Store
+**/._*
+
+# Dependencies
+node_modules
+client/node_modules
+server/node_modules
+
+# Build outputs
+client/dist
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Environment files
+.env
+client/.env
+server/.env
+
+# Log files
+*.log
+logs
+server/logs

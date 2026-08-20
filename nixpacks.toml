@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = [
+  "if [ -d client ]; then (cd client && npm ci); fi",
+  "if [ -d server ]; then (cd server && npm ci); else npm ci; fi"
+]
+
+[phases.build]
+cmds = [
+  "if [ -d client ]; then (cd client && npm run build); fi"
+]
+
+[start]
+cmd = "if [ -d server ]; then (cd server && npm start); else npm start; fi"
