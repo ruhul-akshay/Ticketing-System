@@ -41,11 +41,38 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// ── Explicit CORS Safety Net ──────────────────────────────────────────────────
+// Force Access-Control-Allow-Origin header on EVERY response, including
+// preflight OPTIONS. This is needed when Easypanel / reverse-proxy strips the
+// cors() middleware headers before they reach the browser.
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Request-Id'
+  );
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  // Respond immediately to preflight requests so they never reach Helmet/routes
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // ── Trust Proxy ───────────────────────────────────────────────────────────────
 app.set('trust proxy', 1);
 
 // ── Security Headers ──────────────────────────────────────────────────────────
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// crossOriginResourcePolicy cross-origin keeps Helmet from blocking cross-origin responses
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // Disable contentSecurityPolicy to prevent it from blocking API calls in development
+  contentSecurityPolicy: false,
+}));
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 app.use(

@@ -22,18 +22,115 @@ const normalizeRole = (role) => {
   return 'Client User';
 };
 
+/**
+ * Helper to parse backend, network, server, and authentication errors into user-friendly message and category
+ */
+export const parseAuthError = (error, defaultMessage = 'Login failed.') => {
+  // 1. Network / Connection Error (e.g. backend server down, no internet, CORS, timeout)
+  if (!error?.response) {
+    if (error?.code === 'ECONNABORTED' || error?.message?.toLowerCase().includes('timeout')) {
+      return {
+        message: 'Server request timed out. Please try again.',
+        type: 'timeout',
+        status: null,
+      };
+    }
+    if (
+      error?.code === 'ERR_NETWORK' ||
+      error?.message?.toLowerCase().includes('network error') ||
+      error?.message?.toLowerCase().includes('failed to fetch')
+    ) {
+      return {
+        message: 'Cannot connect to server. Check your network or server status.',
+        type: 'network',
+        status: null,
+      };
+    }
+    return {
+      message: error?.message || 'Cannot communicate with server. Check your network.',
+      type: 'network',
+      status: null,
+    };
+  }
+
+  const status = error.response.status;
+  const backendMsg = error.response.data?.message;
+
+  // 2. Specific HTTP Status Codes
+  if (status === 401) {
+    return {
+      message: backendMsg || 'Invalid email or password.',
+      type: 'credentials',
+      status,
+    };
+  }
+
+  if (status === 400) {
+    return {
+      message: backendMsg || 'Please enter a valid email and password.',
+      type: 'validation',
+      status,
+    };
+  }
+
+  if (status === 403) {
+    return {
+      message: backendMsg || 'Account is inactive or access is restricted.',
+      type: 'forbidden',
+      status,
+    };
+  }
+
+  if (status === 404) {
+    return {
+      message: backendMsg || 'No account found with this email address.',
+      type: 'not_found',
+      status,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      message: backendMsg || 'Too many attempts. Please wait a few minutes.',
+      type: 'rate_limit',
+      status,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      message: backendMsg
+        ? `Server error (${status}): ${backendMsg}`
+        : `Server error (${status}). Please try again later.`,
+      type: 'server',
+      status,
+    };
+  }
+
+  return {
+    message: backendMsg || defaultMessage,
+    type: 'general',
+    status,
+  };
+};
+
 export const useAuthStore = create((set, get) => ({
   user: getInitialUser(),
   isAuthenticated: getInitialAuth(),
   isLoading: false,
   error: null,
+  errorType: null,
+  errorStatus: null,
   needsProfileCompletion: getInitialUser()?.isFirstLogin === true,
   isResetting: false,
   resetError: null,
+  resetErrorType: null,
   resetSuccess: false,
   
+  clearError: () => set({ error: null, errorType: null, errorStatus: null }),
+
   login: async (email, password) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, errorType: null, errorStatus: null });
     try {
       const response = await api.post('/auth/login', { email, password });
       
@@ -49,12 +146,21 @@ export const useAuthStore = create((set, get) => ({
         user: normalizedUser, 
         isAuthenticated: true, 
         isLoading: false,
+        error: null,
+        errorType: null,
+        errorStatus: null,
         needsProfileCompletion: normalizedUser.isFirstLogin === true
       });
       return true;
     } catch (error) {
       console.error('Login failed', error);
-      set({ error: error.response?.data?.message || 'Login failed. Please check your credentials.', isLoading: false });
+      const parsed = parseAuthError(error, 'Login failed. Please check your credentials.');
+      set({ 
+        error: parsed.message, 
+        errorType: parsed.type, 
+        errorStatus: parsed.status, 
+        isLoading: false 
+      });
       return false;
     }
   },
@@ -173,19 +279,23 @@ export const useAuthStore = create((set, get) => ({
   },
   
   forgotPassword: async (email) => {
-    set({ isResetting: true, resetError: null, resetSuccess: false });
+    set({ isResetting: true, resetError: null, resetErrorType: null, resetSuccess: false });
     try {
       await api.post('/auth/forgot-password', { email });
       set({ isResetting: false, resetSuccess: true });
       return true;
     } catch (error) {
-      const msg = error.response?.data?.message || 'Something went wrong. Please try again.';
-      set({ isResetting: false, resetError: msg });
+      const parsed = parseAuthError(error, 'Unable to send temporary password. Please try again.');
+      set({ 
+        isResetting: false, 
+        resetError: parsed.message,
+        resetErrorType: parsed.type 
+      });
       return false;
     }
   },
 
-  clearResetState: () => set({ isResetting: false, resetError: null, resetSuccess: false }),
+  clearResetState: () => set({ isResetting: false, resetError: null, resetErrorType: null, resetSuccess: false }),
 
   logout: () => {
     sessionStorage.removeItem('token');

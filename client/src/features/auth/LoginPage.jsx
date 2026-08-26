@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, LogIn, ArrowRight, Sun, Moon, KeyRound, ArrowLeft, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Mail, Lock, LogIn, ArrowRight, Sun, Moon, KeyRound, ArrowLeft, CheckCircle2, AlertCircle, AlertTriangle, Clock, X, Loader2 } from 'lucide-react';
 import { useThemeStore } from '../../store/useThemeStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import Background3D from './Background3D';
@@ -13,13 +13,69 @@ import logoImg from '../../assets/logo.png';
 const VIEW_LOGIN  = 'login';
 const VIEW_FORGOT = 'forgot';
 
+/* ── error visual helper (high contrast for both light & dark themes) ───────────────────── */
+const getErrorConfig = (type, status) => {
+  switch (type) {
+    case 'server':
+      return {
+        icon: AlertTriangle,
+        badge: status ? `Server (${status})` : 'Server Error',
+        badgeBg: 'bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-500/20 dark:text-rose-300 dark:border-rose-500/30',
+        container: 'bg-rose-50 text-rose-950 border-rose-300 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-500/40',
+        iconColor: 'text-rose-700 dark:text-rose-400',
+      };
+    case 'network':
+    case 'timeout':
+      return {
+        icon: AlertCircle,
+        badge: type === 'timeout' ? 'Timeout' : 'Network',
+        badgeBg: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30',
+        container: 'bg-amber-50 text-amber-950 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-500/40',
+        iconColor: 'text-amber-700 dark:text-amber-400',
+      };
+    case 'rate_limit':
+      return {
+        icon: Clock,
+        badge: 'Rate Limited',
+        badgeBg: 'bg-orange-100 text-orange-900 border-orange-300 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30',
+        container: 'bg-orange-50 text-orange-950 border-orange-300 dark:bg-orange-950/50 dark:text-orange-200 dark:border-orange-500/40',
+        iconColor: 'text-orange-700 dark:text-orange-400',
+      };
+    case 'forbidden':
+      return {
+        icon: AlertCircle,
+        badge: 'Access Denied',
+        badgeBg: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30',
+        container: 'bg-amber-50 text-amber-950 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-500/40',
+        iconColor: 'text-amber-700 dark:text-amber-400',
+      };
+    case 'not_found':
+      return {
+        icon: Mail,
+        badge: 'Not Found',
+        badgeBg: 'bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30',
+        container: 'bg-purple-50 text-purple-950 border-purple-300 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-500/40',
+        iconColor: 'text-purple-700 dark:text-purple-400',
+      };
+    case 'credentials':
+    default:
+      return {
+        icon: KeyRound,
+        badge: 'Failed',
+        badgeBg: 'bg-red-100 text-red-900 border-red-300 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30',
+        container: 'bg-red-50 text-red-950 border-red-300 dark:bg-red-950/50 dark:text-red-200 dark:border-red-500/40',
+        iconColor: 'text-red-700 dark:text-red-400',
+      };
+  }
+};
+
 const LoginPage = () => {
   const navigate = useNavigate();
   const {
-    login, isLoading, error,
+    login, isLoading, error, errorType, errorStatus, clearError,
     isAuthenticated, user, needsProfileCompletion,
     forgotPassword, clearResetState,
-    isResetting, resetError, resetSuccess,
+    isResetting, resetError, resetErrorType, resetSuccess,
   } = useAuthStore();
 
   const [view,     setView]     = useState(VIEW_LOGIN);
@@ -159,16 +215,40 @@ const LoginPage = () => {
                 <form onSubmit={handleLogin} className="space-y-5">
                   {/* Error banner */}
                   <AnimatePresence mode="wait">
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, height: 'auto', scale: 1 }}
-                        exit={{ opacity: 0, height: 0, scale: 0.95 }}
-                        className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-[13px] font-semibold text-center overflow-hidden flex items-center justify-center gap-2"
-                      >
-                        <span className="text-red-500">⚠️</span> {error}
-                      </motion.div>
-                    )}
+                    {error && (() => {
+                      const config = getErrorConfig(errorType, errorStatus);
+                      const IconComp = config.icon;
+
+                      return (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                          exit={{ opacity: 0, height: 0, scale: 0.96 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className={`border rounded-xl px-3.5 py-2.5 shadow-sm overflow-hidden flex items-center justify-between gap-2.5 ${config.container}`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <IconComp size={16} className={`${config.iconColor} shrink-0`} />
+                            <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${config.badgeBg} shrink-0`}>
+                                {config.badge}
+                              </span>
+                              <span className="font-semibold text-[12px] leading-tight">
+                                {error}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={clearError}
+                            className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-md text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer shrink-0"
+                            title="Dismiss"
+                          >
+                            <X size={14} />
+                          </button>
+                        </motion.div>
+                      );
+                    })()}
                   </AnimatePresence>
 
                   <Input
@@ -176,7 +256,10 @@ const LoginPage = () => {
                     type="email"
                     icon={Mail}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) clearError();
+                    }}
                     placeholder="name@client.com"
                     required
                   />
@@ -187,7 +270,10 @@ const LoginPage = () => {
                       type="password"
                       icon={Lock}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (error) clearError();
+                      }}
                       placeholder="••••••••"
                       required
                     />
@@ -279,17 +365,40 @@ const LoginPage = () => {
                     >
                       {/* Error banner */}
                       <AnimatePresence mode="wait">
-                        {resetError && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-[13px] font-medium overflow-hidden"
-                          >
-                            <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-500" />
-                            {resetError}
-                          </motion.div>
-                        )}
+                        {resetError && (() => {
+                          const config = getErrorConfig(resetErrorType, null);
+                          const IconComp = config.icon;
+
+                          return (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0, scale: 0.96 }}
+                              animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                              exit={{ opacity: 0, height: 0, scale: 0.96 }}
+                              transition={{ duration: 0.2, ease: 'easeOut' }}
+                              className={`border rounded-xl px-3.5 py-2.5 shadow-sm overflow-hidden flex items-center justify-between gap-2.5 ${config.container}`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <IconComp size={16} className={`${config.iconColor} shrink-0`} />
+                                <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${config.badgeBg} shrink-0`}>
+                                    {config.badge}
+                                  </span>
+                                  <span className="font-semibold text-[12px] leading-tight">
+                                    {resetError}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={clearResetState}
+                                className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-md text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer shrink-0"
+                                title="Dismiss"
+                              >
+                                <X size={14} />
+                              </button>
+                            </motion.div>
+                          );
+                        })()}
                       </AnimatePresence>
 
                       <Input
@@ -297,7 +406,10 @@ const LoginPage = () => {
                         type="email"
                         icon={Mail}
                         value={resetEmail}
-                        onChange={(e) => setResetEmail(e.target.value)}
+                        onChange={(e) => {
+                          setResetEmail(e.target.value);
+                          if (resetError) clearResetState();
+                        }}
                         placeholder="name@client.com"
                         required
                         id="forgot-email-input"
