@@ -1,11 +1,14 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
+import { extractPastedImages } from '../../features/consultant/detail/TicketConversation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock, ExternalLink } from 'lucide-react';
+import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock, ExternalLink, Bot, UserCheck, ArrowRight, Calendar, Activity } from 'lucide-react';
 import api from '../../api/mockAxios';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useConsultantStore } from '../../store/useConsultantStore';
+import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
+import { resolveConsultantInfo } from '../../features/consultant/detail/TicketWorkLogsSection';
 import * as XLSX from 'xlsx';
 
 const formatHoursToHM = (hoursVal) => {
@@ -22,6 +25,16 @@ const formatHoursToHM = (hoursVal) => {
     return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
   }
   return '0 hours';
+};
+
+const formatCompactHM = (hoursVal) => {
+  const totalMinutes = Math.round(Number(hoursVal || 0) * 60);
+  if (totalMinutes <= 0) return '0m';
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m`;
+  if (hrs > 0) return `${hrs}h`;
+  return `${mins}m`;
 };
 
 const parseCSV = (text) => {
@@ -131,10 +144,23 @@ const getPriorityColor = (priority) => {
   }
 };
 
-export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClose }) {
+export default function TicketViewerModal({ ticket: initialTicket, isOpen = true, onClose }) {
   const liveTicket = useTicketStore((state) => {
-    const targetId = String(initialTicket?.id || initialTicket?._id || initialTicket?.original?._id || '');
-    return state.tickets.find((t) => String(t.id || t._id || t.original?._id) === targetId) || initialTicket;
+    if (!initialTicket) return null;
+    const raw = initialTicket.ticket ? initialTicket.ticket : initialTicket;
+    const targetId = String(raw.id || raw._id || raw.original?._id || '');
+    const targetNum = String(raw.ticketNumber || '');
+
+    const found = state.tickets.find((t) => {
+      const tid = String(t.id || t._id || t.original?._id || '');
+      const tnum = String(t.ticketNumber || '');
+      return (
+        (targetId && (tid === targetId || tnum === targetId)) ||
+        (targetNum && (tid === targetNum || tnum === targetNum))
+      );
+    });
+
+    return found || raw;
   });
 
   const { fetchTickets } = useTicketStore();
@@ -177,7 +203,37 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen, onClo
   const [replyText, setReplyText] = React.useState('');
   const [replyFiles, setReplyFiles] = React.useState([]);
   const [isInternal, setIsInternal] = React.useState(false);
+  const [pasteFlash, setPasteFlash] = React.useState(false);
   const replyFileRef = useRef(null);
+  const replyTextareaRef = useRef(null);
+
+  // Native DOM paste listener for reply textarea (bypasses React synthetic events)
+  const setReplyFilesRef = useRef(setReplyFiles);
+  useEffect(() => { setReplyFilesRef.current = setReplyFiles; }, [setReplyFiles]);
+
+  useEffect(() => {
+    const onPasteNative = (e) => {
+      const images = extractPastedImages(e);
+      if (images.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        setReplyFilesRef.current((prev) => [...prev, ...images]);
+        setPasteFlash(true);
+        setTimeout(() => setPasteFlash(false), 1200);
+        console.log('[TicketViewerModal Paste] Captured', images.length, 'screenshot(s)');
+      }
+    };
+
+    const textarea = replyTextareaRef.current;
+    if (textarea) textarea.addEventListener('paste', onPasteNative);
+    // Also listen on document for when modal is open
+    document.addEventListener('paste', onPasteNative);
+
+    return () => {
+      if (textarea) textarea.removeEventListener('paste', onPasteNative);
+      document.removeEventListener('paste', onPasteNative);
+    };
+  }, []);
 
   const ticket = liveTicket || {};
 
@@ -269,6 +325,29 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
     return logs.reduce((sum, log) => sum + (Number(log.hours) || 0), 0);
   }, [ticket.workLogs, ticket.original?.workLogs]);
 
+  const memberEfforts = React.useMemo(() => {
+    const logs = ticket.workLogs || ticket.original?.workLogs || [];
+    const map = {};
+    logs.forEach((log) => {
+      const info = resolveConsultantInfo(log.addedBy, ticket, consultants, user);
+      const groupKey = info.name || info.id;
+
+      if (!map[groupKey]) {
+        map[groupKey] = {
+          id: info.id,
+          name: info.name,
+          email: info.email,
+          role: info.role,
+          totalHours: 0,
+          entriesCount: 0
+        };
+      }
+      map[groupKey].totalHours += Number(log.hours || 0);
+      map[groupKey].entriesCount += 1;
+    });
+    return Object.values(map);
+  }, [ticket.workLogs, ticket.original?.workLogs, ticket, consultants, user]);
+
   React.useEffect(() => {
     if (!isOpen || !liveTicket) return;
 
@@ -298,19 +377,16 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
       setSolutionText(liveTicket.original?.solution || '');
       setActiveConsoleTab(isCurrentSuperAdmin ? 'assign' : 'forward');
 
-      if (isCurrentConsultant) {
-        // Always fetch (caching prevents redundant network calls)
-        fetchConsultants().catch(err => console.error('Error fetching consultants:', err));
-        const ticketId = liveTicket.id || liveTicket._id || liveTicket.original?._id;
-        const openedByList = (liveTicket.openedBy || liveTicket.original?.openedBy || []).map(id => id.toString());
-        const userId = (user?.id || user?._id)?.toString();
-        if (ticketId && userId && !openedByList.includes(userId)) {
-          useTicketStore.getState().markTicketAsOpened(ticketId);
-        }
+      // Mark ticket as opened for current user (decreases unread ticket notification badge)
+      const ticketId = liveTicket.id || liveTicket._id || liveTicket.original?._id;
+      const openedByList = (liveTicket.openedBy || liveTicket.original?.openedBy || []).map(id => id.toString());
+      const userId = (user?.id || user?._id)?.toString();
+      if (ticketId && userId && !openedByList.includes(userId)) {
+        useTicketStore.getState().markTicketAsOpened(ticketId);
       }
-      if (isCurrentSuperAdmin) {
-        // SuperAdmin also needs consultants for assign/forward tabs
-        fetchConsultants().catch(err => console.error('Error fetching consultants (superadmin):', err));
+
+      if (isCurrentConsultant || isCurrentSuperAdmin) {
+        fetchConsultants().catch(err => console.error('Error fetching consultants:', err));
       }
     }
   }, [liveTicket?.id, isOpen, user]);
@@ -474,7 +550,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
 
   return (
     <AnimatePresence>
-      {(isOpen && initialTicket && liveTicket) ? (
+      {(isOpen && (initialTicket || liveTicket)) ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 font-sans">
         {/* Backdrop */}
         <motion.div
@@ -491,10 +567,10 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 30 }}
           transition={{ type: "spring", duration: 0.6, bounce: 0.3 }}
-          className="bg-[#111620] border border-white/10 w-full max-w-2xl rounded-[2rem] shadow-[0_0_80px_rgba(0,0,0,0.6)] overflow-hidden relative z-10 flex flex-col max-h-[90vh]"
+          className="bg-white dark:bg-[#111620] border border-slate-200 dark:border-white/10 w-full max-w-2xl rounded-[2rem] shadow-[0_10px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_0_80px_rgba(0,0,0,0.6)] overflow-hidden relative z-10 flex flex-col max-h-[90vh]"
         >
           {/* Header */}
-          <div className="px-8 py-6 border-b border-white/5 bg-[#181f2b]/50 backdrop-blur-xl flex justify-between items-start sticky top-0 z-20">
+          <div className="px-6 sm:px-8 py-5 border-b border-slate-200 dark:border-white/5 bg-slate-50/90 dark:bg-[#181f2b]/50 backdrop-blur-xl flex justify-between items-start sticky top-0 z-20">
             <div>
               <div className="flex items-center gap-3 mb-2.5">
                 <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">{ticket.ticketNumber || ticket.id}</span>
@@ -502,9 +578,9 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   {ticket.status}
                 </span>
               </div>
-              <h2 className="text-2xl font-black text-white tracking-tight leading-tight pr-8">{ticket.title}</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-tight pr-8">{ticket.title}</h2>
             </div>
-            <div className="flex items-center gap-3 absolute right-6 top-6">
+            <div className="flex items-center gap-2 sm:gap-3 absolute right-4 sm:right-6 top-5">
               {isCurrentConsultant && ticket.status !== 'Resolved' && (
                 <button 
                   onClick={() => {
@@ -514,21 +590,28 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                       if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
                     }, 50);
                   }} 
-                  className="p-2 bg-white/5 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                  className="p-2 bg-slate-100 hover:bg-amber-500/20 dark:bg-white/5 dark:hover:bg-amber-500/20 text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
                   title="Forward Ticket"
                 >
                   <Send size={13} />
                   <span className="hidden sm:inline">Forward</span>
                 </button>
               )}
-              {isCurrentConsultant && (
+              {(isCurrentConsultant || isCurrentSuperAdmin) && (
                 <button
                   onClick={() => {
                     const tid = ticket.ticketNumber || ticket.id || ticket._id;
+                    const roleStr = (user?.role || '').toLowerCase().replace(/\s+/g, '');
+                    let targetPath = `/my-tickets?ticketId=${tid}`;
+                    if (roleStr === 'superadmin' || roleStr === 'super_admin') {
+                      targetPath = `/super-admin/tickets?ticketId=${tid}`;
+                    } else if (roleStr === 'consultant' || roleStr === 'admin') {
+                      targetPath = `/consultant/tickets?ticketId=${tid}`;
+                    }
                     onClose();
-                    navigate(`/consultant/tickets?ticketId=${tid}`);
+                    navigate(targetPath);
                   }}
-                  className="p-2 bg-white/5 hover:bg-violet-500/20 text-slate-400 hover:text-violet-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                  className="p-2 bg-slate-100 hover:bg-violet-500/20 dark:bg-white/5 dark:hover:bg-violet-500/20 text-slate-600 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
                   title="Open Full Ticket Panel"
                 >
                   <ExternalLink size={13} />
@@ -537,7 +620,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               )}
               <button 
                 onClick={handleDownloadTicketDetails}
-                className="p-2 bg-white/5 hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 rounded-xl transition-all border border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
+                className="p-2 bg-slate-100 hover:bg-blue-500/20 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
                 title="Download Ticket Details"
               >
                 <Download size={13} />
@@ -545,7 +628,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               </button>
               <button 
                 onClick={onClose} 
-                className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-full transition-colors border border-white/5 flex items-center justify-center"
+                className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full transition-colors border border-slate-200 dark:border-white/5 flex items-center justify-center cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -553,49 +636,49 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
           </div>
 
           {/* Body */}
-          <div className="p-8 overflow-y-auto relative scroll-smooth flex-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+          <div className="p-6 sm:p-8 overflow-y-auto relative scroll-smooth flex-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#94a3b8 transparent' }}>
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-blue-600/5 blur-[100px] pointer-events-none" />
             
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8 relative z-10">
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><AlertCircle size={13} /> Priority</span>
-                <span className={`text-[14px] font-black tracking-wide uppercase ${getPriorityColor(ticket.priority)}`}>{ticket.priority}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 relative z-10">
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><AlertCircle size={12} /> Priority</span>
+                <span className={`text-[13px] font-black tracking-wide uppercase ${getPriorityColor(ticket.priority)}`}>{ticket.priority}</span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={13} className="text-blue-400" /> Client</span>
-                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full" title={ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal'}>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={12} className="text-blue-500 dark:text-blue-400" /> Client</span>
+                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full" title={ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal'}>
                   {ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal'}
                 </span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><User size={13} className="text-purple-400" /> Assigned To</span>
-                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full" title={ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><User size={12} className="text-purple-500 dark:text-purple-400" /> Assigned To</span>
+                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full" title={ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}>
                   {ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}
                 </span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-emerald-400" /> Effort Logging</span>
-                <span className="text-[13px] font-black text-emerald-400 tracking-wide">{formatHoursToHM(grandTotalHours)}</span>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Clock size={12} className="text-emerald-500 dark:text-emerald-400" /> Effort Logging</span>
+                <span className="text-[13px] font-black text-emerald-600 dark:text-emerald-400 tracking-wide tabular-nums">{formatCompactHM(grandTotalHours)}</span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={13} /> Dept</span>
-                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full">{ticket.department}</span>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={12} /> Dept</span>
+                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full">{ticket.department}</span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Tag size={13} /> Category</span>
-                <span className="text-[14px] font-bold text-white tracking-wide truncate w-full">{ticket.original?.category || 'General'}</span>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Tag size={12} /> Category</span>
+                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full">{ticket.original?.category || 'General'}</span>
               </div>
-              <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner col-span-2">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} /> Created</span>
-                <span className="text-[13px] font-bold text-white tracking-wide">
+              <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm col-span-2">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Clock size={12} /> Created</span>
+                <span className="text-[12px] font-bold text-slate-900 dark:text-white tracking-wide">
                   {new Date(ticket.createdAt).toLocaleDateString()} {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
               {isResolved && (
-                <div className="bg-[#1d2633]/50 border border-emerald-500/20 p-4 rounded-[1.2rem] flex flex-col gap-1.5 items-start shadow-inner col-span-2 sm:col-span-1">
-                  <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1.5"><CheckCircle size={13} /> Solved</span>
-                  <span className="text-[13px] font-bold text-emerald-400 tracking-wide">
+                <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-emerald-500/30 dark:border-emerald-500/20 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm col-span-2 sm:col-span-1">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest flex items-center gap-1.5"><CheckCircle size={12} /> Solved</span>
+                  <span className="text-[12px] font-bold text-emerald-700 dark:text-emerald-400 tracking-wide">
                     {ticket.original?.solvedAt || ticket.original?.actualResolutionDate ? (
                       <>
                         {new Date(ticket.original.solvedAt || ticket.original.actualResolutionDate).toLocaleDateString()}
@@ -608,42 +691,158 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               )}
             </div>
 
+            {/* Consultant Work & Effort Summary */}
+            <div className="mb-6 relative z-10 w-full bg-slate-100/90 dark:bg-[#1d2633]/60 border border-emerald-500/30 dark:border-emerald-500/20 p-4 sm:p-5 rounded-[1.2rem] space-y-3.5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                    <Activity size={15} />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider truncate">
+                      Work & Effort Breakdown
+                    </h4>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                      Consultants who worked on this ticket & hours logged
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30 whitespace-nowrap shrink-0">
+                  Total: {formatCompactHM(grandTotalHours)}
+                </span>
+              </div>
+
+              {memberEfforts.length > 0 ? (
+                <div className="space-y-3">
+                  {/* Consultant breakdown cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {memberEfforts.map((member) => {
+                      const pct =
+                        grandTotalHours > 0
+                          ? Math.round((member.totalHours / grandTotalHours) * 100)
+                          : 0;
+
+                      return (
+                        <div
+                          key={member.id || member.name}
+                          className="p-3 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 rounded-xl space-y-2 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm">
+                                {member.name[0]?.toUpperCase() || 'U'}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {member.name}
+                                </p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                                  {member.role || 'Consultant'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 flex flex-col items-end">
+                              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 tabular-nums px-2 py-0.5 bg-emerald-500/10 rounded-md border border-emerald-500/20 whitespace-nowrap">
+                                {formatCompactHM(member.totalHours)}
+                              </span>
+                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+                                {pct}% of total
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
+                              style={{ width: `${Math.max(pct, 5)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Itemized Work Logs History */}
+                  {(ticket.workLogs || ticket.original?.workLogs)?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-white/5">
+                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-2">
+                        Itemized Work Log History ({(ticket.workLogs || ticket.original?.workLogs).length} entries)
+                      </span>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                        {(ticket.workLogs || ticket.original?.workLogs).map((log, lIdx) => {
+                          const info = resolveConsultantInfo(log.addedBy, ticket, consultants, user);
+                          return (
+                            <div
+                              key={lIdx}
+                              className="flex items-center justify-between gap-2 px-3 py-2 bg-white dark:bg-black/20 rounded-lg text-xs border border-slate-200 dark:border-white/5 shadow-sm"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium shrink-0">
+                                  {log.date ? new Date(log.date).toLocaleDateString('en-GB') : '—'}
+                                </span>
+                                <span className="font-bold text-slate-900 dark:text-white truncate">{info.name}</span>
+                              </div>
+                              <span className="font-black text-emerald-600 dark:text-emerald-400 text-xs shrink-0 whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                {formatCompactHM(log.hours)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3.5 bg-white dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 flex items-center justify-between text-xs shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <User size={14} className="text-slate-400" />
+                    <span className="text-slate-700 dark:text-slate-300 font-bold">
+                      Assigned to: <span className="text-slate-900 dark:text-white">{ticket.assignedTo?.name || ticket.original?.assignedTo?.name || ticket.assignee || 'Unassigned'}</span>
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 italic">
+                    0 hours logged so far
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* Description */}
             <div className="relative z-10 mb-8">
-              <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-3">Description</h3>
-              <div className="bg-[#1d2633] border border-white/5 p-6 rounded-2xl text-[14px] text-slate-300 leading-relaxed font-medium shadow-inner whitespace-pre-wrap">
+              <h3 className="text-[13px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Description</h3>
+              <div className="bg-slate-100/80 dark:bg-[#1d2633] border border-slate-200 dark:border-white/5 p-6 rounded-2xl text-[14px] text-slate-800 dark:text-slate-300 leading-relaxed font-medium shadow-sm whitespace-pre-wrap">
                 {ticket.description}
               </div>
             </div>
 
-            {/* Attachments */}
+            {/* User Attachments */}
             <div className="relative z-10 mb-8">
-              <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-3">User Attachments</h3>
+              <h3 className="text-[13px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">User Attachments</h3>
               {(!ticket.attachments?.length && !ticket.original?.attachments?.length) ? (
-                <div className="bg-[#1d2633]/50 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-[13px] font-medium italic shadow-inner">
+                <div className="bg-slate-100/70 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-4 rounded-xl text-center text-slate-500 text-[13px] font-medium italic shadow-sm">
                   No user attachments provided
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {(ticket.attachments?.length > 0 ? ticket.attachments : (ticket.original?.attachments || [])).map((file) => (
-                    <div key={file._id} className="bg-[#1d2633] border border-white/5 p-4 rounded-xl flex items-center justify-between shadow-inner">
+                    <div key={file._id} className="bg-slate-100/90 dark:bg-[#1d2633] border border-slate-200 dark:border-white/5 p-4 rounded-xl flex items-center justify-between shadow-sm">
                       <div className="flex items-center gap-3 overflow-hidden">
                         <div className="p-2 bg-blue-500/10 rounded-lg shrink-0">
-                          <File size={16} className="text-blue-400" />
+                          <File size={16} className="text-blue-500 dark:text-blue-400" />
                         </div>
-                        <span className="text-[14px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
+                        <span className="text-[14px] font-medium text-slate-800 dark:text-slate-200 truncate">{file.originalName || file.filename}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button 
                           onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors border border-white/5 cursor-pointer"
+                          className="p-2 bg-white dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer"
                           title="View Attachment"
                         >
                           <Eye size={16} />
                         </button>
                         <button 
                           onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors border border-white/5 cursor-pointer"
+                          className="p-2 bg-white dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer"
                           title="Download Attachment"
                         >
                           <Download size={16} />
@@ -658,12 +857,12 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             {/* Final Technical Solution & Knowledge Base Attachments */}
             {(ticket.original?.solution || ticket.solution || ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
               <div className="relative z-10 mb-8">
-                <h3 className="text-[13px] font-bold text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <h3 className="text-[13px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
                   <CheckCircle size={15} /> Final Technical Solution & Knowledge Base Attachments
                 </h3>
-                <div className="bg-[#1d2633] border border-emerald-500/20 p-6 rounded-2xl space-y-4 shadow-inner">
+                <div className="bg-slate-100/90 dark:bg-[#1d2633] border border-emerald-500/30 dark:border-emerald-500/20 p-6 rounded-2xl space-y-4 shadow-sm">
                   {(ticket.original?.solution || ticket.solution) ? (
-                    <div className="text-[14px] text-slate-200 leading-relaxed font-semibold whitespace-pre-wrap">
+                    <div className="text-[14px] text-slate-800 dark:text-slate-200 leading-relaxed font-semibold whitespace-pre-wrap">
                       {ticket.original?.solution || ticket.solution}
                     </div>
                   ) : (
@@ -672,28 +871,28 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                   
                   {/* Knowledge Base Attachments inside Solution */}
                   {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
-                    <div className="border-t border-white/5 pt-4">
-                      <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Knowledge Base Attachments</h4>
+                    <div className="border-t border-slate-200 dark:border-white/5 pt-4">
+                      <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Knowledge Base Attachments</h4>
                       <div className="flex flex-col gap-2">
                         {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file) => (
-                          <div key={file._id} className="bg-black/25 border border-white/5 p-3 rounded-xl flex items-center justify-between shadow-sm">
+                          <div key={file._id} className="bg-white dark:bg-black/25 border border-slate-200 dark:border-white/5 p-3 rounded-xl flex items-center justify-between shadow-sm">
                             <div className="flex items-center gap-3 overflow-hidden">
                               <div className="p-2 bg-emerald-500/10 rounded-lg shrink-0">
-                                <File size={14} className="text-emerald-400" />
+                                <File size={14} className="text-emerald-600 dark:text-emerald-400" />
                               </div>
-                              <span className="text-[13px] font-medium text-slate-200 truncate">{file.originalName || file.filename}</span>
+                              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">{file.originalName || file.filename}</span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <span 
                                 onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                                className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors border border-emerald-500/30 dark:border-emerald-500/20 cursor-pointer flex items-center justify-center"
                                 title="View Attachment"
                               >
                                 <Eye size={14} />
                               </span>
                               <span 
                                 onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                className="p-2 bg-white/5 hover:bg-white/10 text-emerald-400 hover:text-white rounded-lg transition-colors border border-emerald-500/20 cursor-pointer flex items-center justify-center"
+                                className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors border border-emerald-500/30 dark:border-emerald-500/20 cursor-pointer flex items-center justify-center"
                                 title="Download Attachment"
                               >
                                 <Download size={14} />
@@ -758,57 +957,135 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             )}
 
             {/* Assignment & Forwarding History */}
-            <div className="relative z-10 mb-8 bg-[#1e293b]/30 p-6 rounded-2xl border border-white/5 shadow-inner">
-              <h3 className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Clock size={14} className="text-blue-400" /> Assignment & Forwarding History
-              </h3>
-              {(!ticket.assignmentHistory || ticket.assignmentHistory.length === 0) ? (
-                <p className="text-[13px] text-slate-500 italic">No assignment history logged.</p>
-              ) : (
-                <div className="relative border-l border-white/10 pl-6 ml-2.5 space-y-6">
-                  {ticket.assignmentHistory.map((item, index) => {
-                    const isInitial = item.action === 'initial_assignment';
-                    const isAssign = item.action === 'assign';
-                    const isForward = item.action === 'forward';
+            <div className="relative z-10 mb-8 bg-slate-100/60 dark:bg-[#1e293b]/40 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-inner space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[13px] font-bold text-slate-800 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                  <Clock size={15} className="text-blue-500" /> Assignment & Forwarding History
+                </h3>
+                <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300">
+                  {ticket.assignmentHistory?.length || 0} Events
+                </span>
+              </div>
 
-                    return (
-                      <div key={index} className="relative">
-                        {/* Dot */}
-                        <div className={`absolute -left-[31px] top-1.5 w-3 h-3 rounded-full border-2 ${
-                          isInitial ? 'bg-blue-500 border-[#111620]' : isAssign ? 'bg-purple-500 border-[#111620]' : 'bg-amber-500 border-[#111620]'
-                        }`} />
-                        
-                        <div className="flex flex-col gap-1">
-                          <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-slate-300">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                              isInitial ? 'bg-blue-500/10 text-blue-400' : isAssign ? 'bg-purple-500/10 text-purple-400' : 'bg-amber-500/10 text-amber-400'
-                            }`}>
-                              {isInitial ? 'Auto Assign' : isAssign ? 'Assign' : 'Forward'}
-                            </span>
-                            <span className="font-bold text-white">
-                              {isInitial ? (
-                                `Assigned to Super Admin: ${item.assignedTo?.name || 'Super Admin'}`
-                              ) : isAssign ? (
-                                `${item.assignedBy?.name || 'Super Admin'} assigned to ${item.assignedTo?.name || 'Consultant'}`
-                              ) : (
-                                `${item.forwardedBy?.name || 'Consultant'} forwarded to ${item.forwardedTo?.name || 'Consultant'}`
-                              )}
-                            </span>
+              {(!ticket.assignmentHistory || ticket.assignmentHistory.length === 0) ? (
+                <p className="text-[13px] text-slate-500 italic py-2">No assignment history logged.</p>
+              ) : (
+                <div className="relative border-l-2 border-slate-200 dark:border-white/10 pl-6 ml-3 space-y-6">
+                  {[...ticket.assignmentHistory]
+                    .sort((a, b) => new Date(b.actionDate || 0) - new Date(a.actionDate || 0))
+                    .map((item, index) => {
+                      const isInitial = item.action === 'initial_assignment';
+                      const isAssign = item.action === 'assign';
+                      const isForward = item.action === 'forward';
+
+                      const actor = isForward ? item.forwardedBy : isAssign ? item.assignedBy : null;
+                      const target = isForward ? item.forwardedTo : item.assignedTo;
+
+                      return (
+                        <div key={index} className="relative group">
+                          {/* Dot Icon Indicator */}
+                          <div
+                            className={`absolute -left-[37px] top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center text-white shadow-md ${
+                              isForward
+                                ? 'bg-amber-500 border-white dark:border-[#111620]'
+                                : isAssign
+                                ? 'bg-purple-600 border-white dark:border-[#111620]'
+                                : 'bg-blue-600 border-white dark:border-[#111620]'
+                            }`}
+                          >
+                            {isForward ? <Send size={10} /> : isAssign ? <UserCheck size={10} /> : <Bot size={10} />}
                           </div>
-                          
-                          {item.remarks && (
-                            <p className="text-[12px] text-slate-400 font-medium italic mt-1 bg-black/20 p-2.5 rounded-xl border border-white/5">
-                              "{item.remarks}"
-                            </p>
-                          )}
-                          
-                          <span className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase mt-1">
-                            {new Date(item.actionDate).toLocaleString()}
-                          </span>
+
+                          <div className="bg-white dark:bg-[#111620]/90 border border-slate-200/80 dark:border-white/5 rounded-2xl p-4 shadow-sm space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-white/5 pb-2">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                                  isForward
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                                    : isAssign
+                                    ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                                }`}
+                              >
+                                {isForward ? (
+                                  <>
+                                    <Send size={10} /> Ticket Forwarded
+                                  </>
+                                ) : isAssign ? (
+                                  <>
+                                    <UserCheck size={10} /> Admin Assignment
+                                  </>
+                                ) : (
+                                  <>
+                                    <Bot size={10} /> Auto-Assignment
+                                  </>
+                                )}
+                              </span>
+
+                              {/* Prominent Date & Time */}
+                              <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs">
+                                <Calendar size={13} className="text-blue-500" />
+                                <span className="font-bold text-slate-700 dark:text-slate-200">
+                                  {item.actionDate ? formatDateTime(item.actionDate) : 'Unknown Date'}
+                                </span>
+                                {item.actionDate && (
+                                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-md">
+                                    {formatRelativeTime(item.actionDate)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Participants */}
+                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                              {actor && (
+                                <div className="flex items-center gap-1.5 p-1.5 sm:p-2 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5">
+                                  <User size={13} className="text-slate-400" />
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-slate-400 block">From</span>
+                                    <span className="font-bold text-slate-800 dark:text-white">
+                                      {actor?.name || 'Staff'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {actor && target && <ArrowRight size={14} className="text-slate-400 shrink-0" />}
+
+                              {target && (
+                                <div className="flex items-center gap-1.5 p-1.5 sm:p-2 rounded-xl bg-blue-50/50 dark:bg-blue-500/[0.04] border border-blue-500/10">
+                                  <UserCheck size={13} className="text-blue-500" />
+                                  <div>
+                                    <span className="text-[9px] uppercase font-bold text-blue-500 block">
+                                      {isForward ? 'Forwarded To' : 'Assigned To'}
+                                    </span>
+                                    <span className="font-bold text-slate-900 dark:text-white">
+                                      {target?.name || 'Consultant'}
+                                    </span>
+                                    {target?.email && (
+                                      <span className="text-[10px] text-slate-400 block font-normal">
+                                        {target.email}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {item.remarks && (
+                              <div className="p-2.5 bg-amber-500/[0.04] dark:bg-amber-500/[0.06] border border-amber-500/20 rounded-xl">
+                                <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 block mb-0.5">
+                                  Instructions / Remarks:
+                                </span>
+                                <p className="text-xs text-slate-700 dark:text-slate-300 font-medium italic">
+                                  "{item.remarks}"
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -1396,10 +1673,32 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                         </div>
                       </div>
                     )}
+                    {replyFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 bg-[#0c1017] border border-white/10 rounded-xl">
+                        {replyFiles.map((f, i) => (
+                          <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-300">
+                            <span className="truncate max-w-[120px] font-medium">{f.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setReplyFiles(prev => prev.filter((_, idx) => idx !== i))}
+                              className="text-slate-400 hover:text-red-400 font-black cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {pasteFlash && (
+                      <div className="text-emerald-400 text-xs font-bold mb-2 animate-bounce flex items-center gap-1">
+                        ✅ Screenshot captured from clipboard!
+                      </div>
+                    )}
                     <textarea 
+                      ref={replyTextareaRef}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      placeholder={isInternal ? "Type internal collaborative note (only visible to support team)..." : "Type your message here..."}
+                      placeholder={isInternal ? "Type internal collaborative note (Ctrl+V / Cmd+V to paste screenshot)..." : "Type your message here (Ctrl+V / Cmd+V to paste screenshot)..."}
                       className={`w-full bg-[#131924] border rounded-[2rem] p-5 text-[14px] text-white focus:outline-none transition-all resize-none h-28 shadow-2xl pr-28 scrollbar-none font-medium placeholder:text-slate-650 ${
                         isInternal 
                           ? 'border-amber-500/30 focus:border-amber-500/60' 
@@ -1531,10 +1830,10 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
           </div>
 
           {/* Footer */}
-          <div className="px-8 py-5 border-t border-white/5 bg-[#181f2b]/80 backdrop-blur-xl flex justify-end gap-4 sticky bottom-0 z-20">
+          <div className="px-6 sm:px-8 py-4 border-t border-slate-200 dark:border-white/5 bg-slate-50/90 dark:bg-[#181f2b]/80 backdrop-blur-xl flex justify-end gap-4 sticky bottom-0 z-20">
             <button 
               onClick={onClose}
-              className="px-6 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 transition-all text-[13px] font-bold"
+              className="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all text-[13px] font-bold cursor-pointer shadow-sm"
             >
               Close
             </button>

@@ -5,6 +5,8 @@ import { FileText, Filter, List, Grid, Search, ChevronRight, Paperclip, Star, Cl
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
+import { getStatusBadgeClass, getStatusColor, getPriorityBadgeClass, getPriorityColor, getTicketEffectiveDate } from '../../utils/ticketHelpers';
+import { formatDateTime } from '../../utils/formatters';
 
 export default function MyTickets() {
   const [view, setView] = useState('list'); // 'list' or 'grid'
@@ -15,18 +17,32 @@ export default function MyTickets() {
   const [ticketScope, setTicketScope] = useState('my');
   const { tickets } = useTicketStore();
   const { user } = useAuthStore();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const ticketIdFromUrl = searchParams.get('ticketId');
   const statusFromUrl = searchParams.get('status');
 
+  const handleCloseModal = () => {
+    setSelectedTicket(null);
+    if (ticketIdFromUrl) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('ticketId');
+      setSearchParams(newParams, { replace: true });
+    }
+  };
+
   useEffect(() => {
-    if (ticketIdFromUrl && tickets.length > 0) {
-      const foundTicket = tickets.find(t => t.id === ticketIdFromUrl || t.ticketNumber === ticketIdFromUrl);
+    if (ticketIdFromUrl && tickets.length > 0 && !selectedTicket) {
+      const target = String(ticketIdFromUrl).trim().toLowerCase();
+      const foundTicket = tickets.find((t) => {
+        const tid = String(t.id || t._id || t.original?._id || '').toLowerCase();
+        const tnum = String(t.ticketNumber || '').toLowerCase();
+        return tid === target || tnum === target;
+      });
       if (foundTicket) {
         setSelectedTicket(foundTicket);
       }
     }
-  }, [ticketIdFromUrl, tickets]);
+  }, [ticketIdFromUrl, tickets, selectedTicket]);
 
   useEffect(() => {
     if (statusFromUrl) {
@@ -56,51 +72,10 @@ export default function MyTickets() {
   });
 
   const sortedTickets = [...filteredTickets].sort((a, b) => {
-    const dateA = new Date(a.createdAt || 0);
-    const dateB = new Date(b.createdAt || 0);
+    const dateA = getTicketEffectiveDate(a);
+    const dateB = getTicketEffectiveDate(b);
     return sortBy === 'newest' ? dateB - dateA : dateA - dateB;
   });
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Open': return 'bg-red-500/20 text-red-500 border-red-500/30';
-      case 'Resolved': return 'bg-green-500/20 text-green-500 border-green-500/30';
-      case 'On Hold': return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
-      case 'Cancelled': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High': case 'Critical': return 'text-red-400';
-      case 'Medium': return 'text-yellow-400';
-      case 'Low': return 'text-green-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const getPriorityBadgeClass = (priority) => {
-    switch (priority) {
-      case 'High':
-      case 'Critical':
-        return 'bg-red-500/10 text-red-400 border border-red-500/20';
-      case 'Medium':
-        return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20';
-      case 'Low':
-        return 'bg-green-500/10 text-green-400 border border-green-500/20';
-      default:
-        return 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
-    }
-  };
-
-  const formatDateTime = (dateVal) => {
-    if (!dateVal) return '';
-    const date = new Date(dateVal);
-    const dStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const tStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `${dStr} • ${tStr}`;
-  };
 
   return (
     <div className="w-full">
@@ -140,8 +115,8 @@ export default function MyTickets() {
           )}
         </div>
         
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:flex-initial">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <input 
               type="text" 
@@ -217,7 +192,7 @@ export default function MyTickets() {
                   <div className="p-6 flex-1 relative z-10 pl-7">
                     <div className="flex justify-between items-start mb-5">
                       <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 tracking-wider">{ticket.ticketNumber || ticket.id}</span>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(ticket.status)} uppercase tracking-wider`}>
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${getStatusBadgeClass(ticket.status)} uppercase tracking-wider`}>
                         {ticket.status}
                       </span>
                     </div>
@@ -308,7 +283,7 @@ export default function MyTickets() {
                         <Star size={10} className="fill-yellow-400/50" /> Rate
                       </div>
                     ) : null}
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${getStatusColor(ticket.status)} uppercase tracking-wider inline-block`}>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${getStatusBadgeClass(ticket.status)} uppercase tracking-wider inline-block`}>
                       {ticket.status}
                     </span>
                     <button className="w-8 h-8 rounded-full bg-white/5 hover:bg-primary text-muted-foreground hover:text-white flex items-center justify-center transition-all ml-4 shrink-0 group-hover:translate-x-1 duration-300">
@@ -336,7 +311,7 @@ export default function MyTickets() {
       <TicketViewerModal 
         ticket={selectedTicket} 
         isOpen={!!selectedTicket} 
-        onClose={() => setSelectedTicket(null)} 
+        onClose={handleCloseModal} 
       />
     </div>
   );

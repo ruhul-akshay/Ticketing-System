@@ -5,8 +5,11 @@ import { useTicketStore } from '../../store/useTicketStore';
 import { useClientStore } from '../../store/useClientStore';
 import { useDepartmentStore } from '../../store/useDepartmentStore';
 import { useClientUserStore } from '../../store/useClientUserStore';
-import Badge from '../../components/ui/Badge';
 import api from '../../api/mockAxios';
+import Badge from '../../components/ui/Badge';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import { getStatusColor, getPriorityColor } from '../../utils/ticketHelpers';
+import { formatMinutesToHM as formatTime } from '../../utils/formatters';
 import { 
   Users, Ticket, Building2, TrendingUp, Calendar, CheckCircle, 
   Clock, Star, RefreshCw, ArrowUp, ArrowDown, Layers, Activity 
@@ -71,37 +74,6 @@ export default function SuperAdminDashboard() {
     return [...clientUsers].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
   }, [clientUsers]);
 
-  const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'active': return 'green';
-      case 'pending': return 'yellow';
-      case 'resolved': return 'emerald';
-      case 'open': return 'red';
-      case 'on hold': case 'hold': return 'yellow';
-      case 'cancelled': return 'gray';
-      case 'closed': return 'gray';
-      case 'suspended': return 'red';
-      default: return 'gray';
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority?.toLowerCase()) {
-      case 'high': case 'critical': return 'red';
-      case 'medium': return 'yellow';
-      case 'low': return 'green';
-      default: return 'gray';
-    }
-  };
-
-  const formatTime = (minutes) => {
-    if (!minutes || minutes <= 0) return '0m';
-    if (minutes < 60) return `${Math.round(minutes)}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = Math.round(minutes % 60);
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-  };
-
   const deptColors = [
     'from-purple-500/20 to-blue-500/20 text-purple-400 border-purple-500/30',
     'from-red-500/20 to-orange-500/20 text-red-500 border-red-500/30',
@@ -111,14 +83,7 @@ export default function SuperAdminDashboard() {
   ];
 
   if (isLoading && tickets.length === 0 && clientUsers.length === 0) {
-    return (
-      <div className="w-full relative font-sans min-h-[60vh] flex flex-col items-center justify-center">
-         <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center animate-pulse mb-6 border border-blue-500/30">
-            <RefreshCw size={30} className="text-blue-500 animate-spin" />
-         </div>
-         <p className="text-slate-400 font-bold uppercase tracking-widest text-[13px]">Loading Dashboard...</p>
-      </div>
-    );
+    return <LoadingSpinner message="Loading Dashboard..." minHeight="min-h-[60vh]" />;
   }
 
   return (

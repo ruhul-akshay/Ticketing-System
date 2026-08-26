@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import api from '../api/mockAxios';
 
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds
+const CACHE_TTL_MS = 4 * 1000; // 4 seconds for fast notification updates
 
 export const useNotificationStore = create((set, get) => ({
   notifications: [],
@@ -59,6 +59,7 @@ export const useNotificationStore = create((set, get) => ({
     try {
       await api.post('/notifications', payload);
       set({ isLoading: false });
+      get().fetchNotifications({ force: true });
       return true;
     } catch (error) {
       set({ error: error.response?.data?.message || error.message, isLoading: false });
@@ -67,20 +68,23 @@ export const useNotificationStore = create((set, get) => ({
   },
 
   markAsRead: async (id) => {
+    if (!id) return;
+    const targetIdStr = String(id);
+
     // Optimistic update — immediately reflect in UI
     set((state) => ({
       notifications: state.notifications.map((n) =>
-        n._id === id ? { ...n, read: true } : n
+        String(n._id || n.id) === targetIdStr ? { ...n, read: true } : n
       ),
     }));
     try {
-      await api.put(`/notifications/${id}/read`);
+      await api.put(`/notifications/${targetIdStr}/read`);
     } catch (error) {
       // Rollback on failure
       console.error('[Notifications] markAsRead failed, rolling back:', error);
       set((state) => ({
         notifications: state.notifications.map((n) =>
-          n._id === id ? { ...n, read: false } : n
+          String(n._id || n.id) === targetIdStr ? { ...n, read: false } : n
         ),
       }));
     }

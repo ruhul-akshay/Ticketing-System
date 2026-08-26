@@ -1,130 +1,58 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, Send, User, Clock, AlertCircle, Building2, Tag, 
-  Download, File, UploadCloud, Plus, Trash2, 
-  ClipboardList, MessageSquare, CheckCircle, Shield, 
-  History, Settings, Activity, Briefcase, Eye, Lock,
-  ChevronRight
-} from 'lucide-react';
+import { Shield, Settings, Activity, Tag, Lock, Send, MessageSquare, Wrench } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useConsultantStore } from '../../store/useConsultantStore';
-import * as XLSX from 'xlsx';
+import { formatHoursToHM } from '../../utils/formatters';
 
-const formatHoursToHM = (hoursVal) => {
-  const totalMinutes = Math.round(Number(hoursVal || 0) * 60);
-  const hrs = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  if (hrs > 0 && mins > 0) {
-    return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} and ${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
-  }
-  if (hrs > 0) {
-    return `${hrs} ${hrs === 1 ? 'hour' : 'hours'}`;
-  }
-  if (mins > 0) {
-    return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
-  }
-  return '0 hours';
-};
+// Sub-components
+import TicketDetailHeader from './detail/TicketDetailHeader';
+import TicketContextCards from './detail/TicketContextCards';
+import TicketAssociatedFiles from './detail/TicketAssociatedFiles';
+import TicketHistoryTimeline from './detail/TicketHistoryTimeline';
+import TicketConversation from './detail/TicketConversation';
+import TicketWorkLogsSection from './detail/TicketWorkLogsSection';
+import TicketResolutionSection from './detail/TicketResolutionSection';
+import TicketForwardingSection from './detail/TicketForwardingSection';
+import FilePreviewModal from '../../components/ui/FilePreviewModal';
 
-const parseCSV = (text) => {
-  if (!text) return [];
-  const lines = [];
-  let row = [""];
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const next = text[i+1];
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        row[row.length - 1] += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      row.push("");
-    } else if ((char === '\r' || char === '\n') && !inQuotes) {
-      if (char === '\r' && next === '\n') {
-        i++;
-      }
-      lines.push(row);
-      row = [""];
-    } else {
-      row[row.length - 1] += char;
-    }
-  }
-  if (row.length > 1 || row[0] !== "") {
-    lines.push(row);
-  }
-  return lines;
-};
-
-const renderCSVTable = (text) => {
-  const rows = parseCSV(text);
-  if (rows.length === 0) return <p className="text-slate-500">Empty CSV file</p>;
-  return (
-    <div className="w-full h-full overflow-auto bg-[#0b0f19] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
-      <table className="w-full border-collapse text-[13px]">
-        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
-          <tr>
-            {rows[0].map((cell, idx) => (
-              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-white/5 text-slate-300">
-          {rows.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
-              {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell}>{cell}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
-const renderExcelTable = (excelData) => {
-  if (!excelData || excelData.length === 0) return <p className="text-slate-500">Empty Excel sheet</p>;
-  return (
-    <div className="w-full h-full overflow-auto bg-[#0b0f19] border border-white/5 rounded-2xl custom-scrollbar shadow-inner text-left">
-      <table className="w-full border-collapse text-[13px]">
-        <thead className="sticky top-0 z-10 border-b border-white/10 text-slate-300 font-bold uppercase tracking-wider text-[11px]">
-          <tr>
-            {excelData[0].map((cell, idx) => (
-              <th key={idx} className="p-4 text-left whitespace-nowrap border-r border-white/5 bg-[#181f2b] text-slate-300">{cell !== undefined && cell !== null ? String(cell) : ''}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-white/5 text-slate-300">
-          {excelData.slice(1).map((row, rIdx) => (
-            <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors border-b border-white/5">
-              {row.map((cell, cIdx) => (
-                <td key={cIdx} className="p-4 min-w-[150px] whitespace-normal break-words border-r border-white/5" title={cell !== undefined && cell !== null ? String(cell) : ''}>
-                  {cell !== undefined && cell !== null ? String(cell) : ''}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
-export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onClose, onUpdateStatus }) {
+export default function ConsultantTicketDetailPanel({
+  ticket: initialTicket,
+  onClose,
+  onUpdateStatus
+}) {
   const liveTicket = useTicketStore((state) => {
-    const targetId = String(initialTicket?.id || initialTicket?._id || initialTicket?.original?._id || '');
-    return state.tickets.find((t) => String(t.id || t._id || t.original?._id) === targetId) || initialTicket;
+    if (!initialTicket) return null;
+    const raw = initialTicket.ticket ? initialTicket.ticket : initialTicket;
+    const targetId = String(raw.id || raw._id || raw.original?._id || '').toLowerCase();
+    const targetNum = String(raw.ticketNumber || '').toLowerCase();
+
+    const found = state.tickets.find((t) => {
+      const tid = String(t.id || t._id || t.original?._id || '').toLowerCase();
+      const tnum = String(t.ticketNumber || '').toLowerCase();
+      return (
+        (targetId && (tid === targetId || tnum === targetId)) ||
+        (targetNum && (tid === targetNum || tnum === targetNum))
+      );
+    });
+
+    return found || raw;
   });
 
   const { fetchTickets, forwardTicket } = useTicketStore();
-  const { consultants: admins, fetchConsultants: fetchAdmins, isLoading: adminsLoading } = useConsultantStore();
+  const { consultants: admins, fetchConsultants: fetchAdmins, isLoading: adminsLoading } =
+    useConsultantStore();
 
+  const ticket = liveTicket;
+  const { user } = useAuthStore();
+  const rawTicketId = ticket?.original?._id || ticket?.id;
+
+  // Responsive active view tab for mobile / tablet screens
+  const [mobileTab, setMobileTab] = useState('overview'); // 'overview' | 'operations'
+
+  // Forwarding State
   const [selectedAdminId, setSelectedAdminId] = useState('');
   const [forwardRemarks, setForwardRemarks] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
@@ -132,26 +60,54 @@ export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onC
   const [forwardCcEmails, setForwardCcEmails] = useState('');
   const [forwardCcDropdownOpen, setForwardCcDropdownOpen] = useState(false);
 
-  React.useEffect(() => {
+  // Chat & Resolution State
+  const [reply, setReply] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [solution, setSolution] = useState(ticket?.original?.solution || '');
+  const [remarkFiles, setRemarkFiles] = useState([]);
+  const [isInternal, setIsInternal] = useState(false);
+  const [status, setStatus] = useState(ticket?.status || 'Open');
+  const [adminFiles, setAdminFiles] = useState([]);
+  const [isSavingEffort, setIsSavingEffort] = useState(false);
+
+  // File Preview State
+  const [previewFile, setPreviewFile] = useState(null);
+
+  // Work Log State
+  const [workLogEntries, setWorkLogEntries] = useState([
+    { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
+  ]);
+
+  // Polling for ticket updates
+  useEffect(() => {
     if (!initialTicket || !liveTicket) return;
 
     const interval = setInterval(() => {
-      fetchTickets().catch(err => console.error('Error polling tickets:', err));
-    }, 4000); // Poll every 4 seconds
+      fetchTickets().catch((err) => console.error('Error polling tickets:', err));
+    }, 4000);
 
     return () => clearInterval(interval);
-  }, [liveTicket?.id, fetchTickets]);
+  }, [liveTicket?.id, fetchTickets, initialTicket]);
 
-  const ticket = liveTicket;
-  const { user } = useAuthStore();
+  // Auto fetch consultants and mark ticket opened
+  useEffect(() => {
+    const isPrivileged =
+      user?.role === 'consultant' ||
+      user?.role === 'admin' ||
+      user?.role === 'superadmin' ||
+      user?.role === 'Consultant' ||
+      user?.role === 'Admin' ||
+      user?.role === 'Super Admin';
 
-  React.useEffect(() => {
-    const isPrivileged = user?.role === 'consultant' || user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'Consultant' || user?.role === 'Admin' || user?.role === 'Super Admin';
     if (isPrivileged) {
-      fetchAdmins().catch(err => console.error('Error fetching consultants:', err));
+      fetchAdmins().catch((err) => console.error('Error fetching consultants:', err));
       if (liveTicket) {
         const ticketId = liveTicket.id || liveTicket._id || liveTicket.original?._id;
-        const openedByList = (liveTicket.openedBy || liveTicket.original?.openedBy || []).map(id => id.toString());
+        const openedByList = (
+          liveTicket.openedBy ||
+          liveTicket.original?.openedBy ||
+          []
+        ).map((id) => id.toString());
         const userId = (user?.id || user?._id)?.toString();
         if (ticketId && userId && !openedByList.includes(userId)) {
           useTicketStore.getState().markTicketAsOpened(ticketId);
@@ -160,145 +116,239 @@ export default function ConsultantTicketDetailPanel({ ticket: initialTicket, onC
     }
   }, [user, liveTicket?.id, fetchAdmins]);
 
-  const [reply, setReply] = useState('');
-  const [isSendingChat, setIsSendingChat] = useState(false);
-  const [solution, setSolution] = useState(ticket.original?.solution || '');
-  const [remarkFiles, setRemarkFiles] = useState([]);
-  const [isInternal, setIsInternal] = useState(false);
-  const [status, setStatus] = useState(ticket.status);
-  const [adminFiles, setAdminFiles] = useState([]);
-  const [previewFile, setPreviewFile] = useState(null); // { url, filename, mimeType, textContent }
-  const fileInputRef = useRef(null);
-  const remarkFileInputRef = useRef(null);
+  // Work log helper calculations
+  const addWorkLogRow = () =>
+    setWorkLogEntries((prev) => [
+      ...prev,
+      { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
+    ]);
 
-  const [workLogEntries, setWorkLogEntries] = useState([
-    { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
-  ]);
+  const removeWorkLogRow = (idx) =>
+    setWorkLogEntries((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
 
-  const addWorkLogRow = () => setWorkLogEntries(prev => [...prev, { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }]);
-  const removeWorkLogRow = (idx) => setWorkLogEntries(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
-  const updateWorkLogRow = (idx, field, value) => setWorkLogEntries(prev => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+  const updateWorkLogRow = (idx, field, value) =>
+    setWorkLogEntries((prev) =>
+      prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+    );
 
   const validEntries = workLogEntries
-    .filter(r => r.date && (Number(r.hours) > 0 || Number(r.minutes) > 0))
-    .map(r => ({
+    .filter((r) => r.date && (Number(r.hours) > 0 || Number(r.minutes) > 0))
+    .map((r) => ({
       date: r.date,
-      hours: Number(r.hours || 0) + (Number(r.minutes || 0) / 60)
+      hours: Number(r.hours || 0) + Number(r.minutes || 0) / 60
     }));
-  const existingTotalHours = (ticket.workLogs || []).reduce((sum, l) => sum + (l.hours || 0), 0);
-  const grandTotalHours = existingTotalHours + validEntries.reduce((sum, r) => sum + Number(r.hours), 0);
 
-  const rawTicketId = ticket.original?._id || ticket.id;
+  const existingTotalHours = (ticket?.workLogs || []).reduce((sum, l) => sum + (l.hours || 0), 0);
+  const grandTotalHours =
+    existingTotalHours + validEntries.reduce((sum, r) => sum + Number(r.hours), 0);
 
+  // Attachment Download
   const handleDownloadAttachment = async (e, ticketId, attachmentId, filename) => {
-    e.stopPropagation(); e.preventDefault();
+    e?.stopPropagation?.();
+    e?.preventDefault?.();
     try {
       const token = sessionStorage.getItem('token');
-      const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
-      const response = await fetch(`${baseUrl}/tickets/${ticketId}/attachment/${attachmentId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const baseUrl =
+        import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${ticketId}/attachment/${attachmentId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
-      setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 5000);
-    } catch (err) { console.error('Download error:', err); alert('Failed to download file'); }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Failed to download attachment');
+    }
   };
 
-  const handleViewAttachment = async (e, ticketId, attachmentId, filename, mimeType) => {
-    e.stopPropagation(); e.preventDefault();
-    try {
-      const token = sessionStorage.getItem('token');
-      const baseUrl = import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
-      const response = await fetch(`${baseUrl}/tickets/${ticketId}/view/${attachmentId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (!response.ok) throw new Error('Failed to load file preview');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      let textContent = '';
-      let excelData = null;
-      
-      const fileLower = filename.toLowerCase();
-      const isExcel = fileLower.endsWith('.xlsx') || fileLower.endsWith('.xls') || 
-                      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-                      mimeType === 'application/vnd.ms-excel';
-      const isCSV = fileLower.endsWith('.csv') || mimeType === 'text/csv';
-      
-      if (isExcel) {
-        const arrayBuffer = await blob.arrayBuffer();
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        excelData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      } else if (isCSV || mimeType?.startsWith('text/') || fileLower.endsWith('.json') || fileLower.endsWith('.txt')) {
-        textContent = await blob.text();
+  // Preview Attachment Inline
+  const handleViewAttachment = async (e, ticketId, attachmentId, filename) => {
+    e?.stopPropagation?.();
+    e?.preventDefault?.();
+
+    const ext = filename?.split('.')?.pop()?.toLowerCase() || '';
+    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+    const isPdf = ext === 'pdf';
+    const isExcel = ['xlsx', 'xls'].includes(ext);
+    const isCsv = ext === 'csv';
+    const isText = ['txt', 'log', 'json', 'md'].includes(ext);
+
+    if (isImage || isPdf || isExcel || isCsv || isText) {
+      try {
+        const token = sessionStorage.getItem('token');
+        const baseUrl =
+          import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+        const response = await fetch(`${baseUrl}/tickets/${ticketId}/view/${attachmentId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) throw new Error('Failed to load inline preview.');
+
+        if (isExcel) {
+          const arrayBuffer = await response.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+          const firstSheet = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheet];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          setPreviewFile({
+            name: filename,
+            type: 'excel',
+            excelData: jsonData,
+            sheetNames: workbook.SheetNames
+          });
+        } else if (isCsv || isText) {
+          const textData = await response.text();
+          setPreviewFile({
+            name: filename,
+            type: isCsv ? 'csv' : 'text',
+            textContent: textData
+          });
+        } else {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          setPreviewFile({
+            name: filename,
+            type: isImage ? 'image' : 'pdf',
+            url: objectUrl
+          });
+        }
+      } catch (err) {
+        console.error('Preview error:', err);
+        handleDownloadAttachment(e, ticketId, attachmentId, filename);
       }
-      
-      setPreviewFile({ url, filename, mimeType, textContent, excelData });
-    } catch (err) {
-      console.error('Preview error:', err);
-      alert('Failed to view file');
+    } else {
+      handleDownloadAttachment(e, ticketId, attachmentId, filename);
     }
   };
 
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (status === 'Resolved' && !solution.trim()) {
-      alert("Validation Required: You must provide a written 'Final Solution' before marking this ticket as Resolved.");
-      return;
-    }
-    const hasChanges = status !== ticket.status || reply.trim().length > 0 || solution !== (ticket.original?.solution || '') || validEntries.length > 0 || adminFiles.length > 0 || remarkFiles.length > 0;
-    if (hasChanges) {
-      onUpdateStatus(ticket.id, status, reply, solution, validEntries, adminFiles, remarkFiles, isInternal);
-      setReply(''); setRemarkFiles([]); setIsInternal(false);
-    } else { onClose(); }
-  };
-
-  // Dedicated handler for logging effort on already-resolved tickets (sends workLogs only, no status/remarks change)
-  const handleSaveWorkLogsOnly = async () => {
-    if (validEntries.length === 0) {
-      return alert('Please enter at least one valid effort entry (date + time).');
-    }
-    try {
-      await useTicketStore.getState().updateTicketStatus(
-        ticket.id,
-        ticket.status,   // keep current status unchanged
-        null,            // no remarks
-        null,            // no solution change
-        validEntries,    // only workLogs
-        [], [], false
-      );
-      setWorkLogEntries([{ date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }]);
-      alert('Effort hours saved successfully!');
-      await fetchTickets();
-    } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to save effort hours.');
-    }
-  };
-
-  const handleSendRemark = async () => {
-    const text = reply.trim();
-    const files = remarkFiles;
-    if (!text && files.length === 0) return;
+  // Chat Submission Handler
+  const handleSendRemark = async (e) => {
+    e?.preventDefault?.();
+    if (!reply.trim() && remarkFiles.length === 0) return;
 
     setIsSendingChat(true);
     try {
-      await useTicketStore.getState().updateTicketStatus(ticket.id, ticket.status, text, null, [], [], files, isInternal);
+      const formData = new FormData();
+      formData.append('remarks', reply);
+      formData.append('isInternal', isInternal ? 'true' : 'false');
+      remarkFiles.forEach((file) => formData.append('remarkAttachments', file));
+
+      const token = sessionStorage.getItem('token');
+      const baseUrl =
+        import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${rawTicketId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to send message.');
+      }
+
       setReply('');
       setRemarkFiles([]);
       setIsInternal(false);
-      if (remarkFileInputRef.current) remarkFileInputRef.current.value = '';
       await fetchTickets();
     } catch (err) {
-      console.error('Send remark error:', err);
-      alert(err?.response?.data?.message || 'Failed to send message. Please try again.');
+      alert(err.message || 'Error updating ticket conversation');
     } finally {
       setIsSendingChat(false);
     }
   };
 
+  // Work-logs-only Save Handler
+  const handleSaveWorkLogsOnly = async () => {
+    if (validEntries.length === 0) {
+      return alert('Please enter effort hours before saving.');
+    }
+    setIsSavingEffort(true);
+    try {
+      const token = sessionStorage.getItem('token');
+      const baseUrl =
+        import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${rawTicketId}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ workLogs: validEntries })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to save effort hours.');
+      }
+
+      alert('Effort hours saved successfully!');
+      setWorkLogEntries([
+        { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
+      ]);
+      await fetchTickets();
+    } catch (err) {
+      alert(err.message || 'Error saving work logs');
+    } finally {
+      setIsSavingEffort(false);
+    }
+  };
+
+  // Full Ticket Submission
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (status === 'Resolved' && (!solution || solution.trim().length === 0)) {
+      return alert('A written solution is required before resolving this ticket.');
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('status', status.toLowerCase());
+      formData.append('solution', solution);
+      if (reply.trim()) formData.append('remarks', reply);
+      formData.append('isInternal', isInternal ? 'true' : 'false');
+      formData.append('workLogs', JSON.stringify(validEntries));
+
+      adminFiles.forEach((file) => formData.append('adminAttachments', file));
+      remarkFiles.forEach((file) => formData.append('remarkAttachments', file));
+
+      const token = sessionStorage.getItem('token');
+      const baseUrl =
+        import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
+      const response = await fetch(`${baseUrl}/tickets/${rawTicketId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to update ticket.');
+      }
+
+      onUpdateStatus?.(ticket.id, status);
+      await fetchTickets();
+      onClose();
+    } catch (err) {
+      alert(err.message || 'Error updating ticket');
+    }
+  };
+
+  // Download Text Summary
   const handleDownloadTicketDetails = () => {
-    const clientName = ticket.clientName || ticket.original?.createdBy?.clientName || ticket.original?.createdBy?.client?.name || 'Self/Internal';
+    const clientName =
+      ticket.clientName ||
+      ticket.original?.createdBy?.clientName ||
+      ticket.original?.createdBy?.client?.name ||
+      'Self/Internal';
     const reportText = `==================================================
 TICKET DETAILS REPORT
 ==================================================
@@ -317,47 +367,48 @@ Updated At:     ${ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString()
 
 2. CREATOR & ASSIGNEE DETAILS
 --------------------------------------------------
-Submitted By:   ${ticket.createdBy?.name || ticket.createdBy || '—'}
-Email:          ${ticket.createdBy?.email || '—'}
+Submitted By:   ${ticket.user || ticket.original?.createdBy?.name || '—'}
+Email:          ${ticket.original?.createdBy?.email || '—'}
 Client:         ${clientName}
-Department:     ${ticket.department?.name || ticket.department || '—'}
-Assigned To:    ${ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}
-Email:          ${ticket.assignedTo?.email || ticket.original?.assignedTo?.email || '—'}
+Department:     ${ticket.department || '—'}
+Assigned To:    ${ticket.assignee || 'Unassigned'}
 
 3. ISSUE DESCRIPTION
 --------------------------------------------------
 ${ticket.description || 'No description provided.'}
 
-4. FINAL SOLUTION / RESOLUTION
+4. FINAL RESOLUTION
 --------------------------------------------------
-${ticket.original?.solution || ticket.solution || 'No solution recorded yet.'}
+${ticket.original?.solution || solution || 'No solution recorded yet.'}
 
-5. REMARKS / CONVERSATION HISTORY
+5. REMARKS / CONVERSATION
 --------------------------------------------------
-${(ticket.original?.remarks || []).map((remark, idx) => {
-  const sender = remark.addedBy?.name || 'System';
-  const role = remark.addedBy?.role || 'Staff';
-  const dateStr = remark.addedAt ? new Date(remark.addedAt).toLocaleString() : '—';
-  const text = remark.text || '';
-  const fileList = (remark.attachments || []).map(att => att.originalName || att.filename).join(', ');
-  const filesInfo = fileList ? `\nAttachments: ${fileList}` : '';
-  return `[${dateStr}] ${sender} (${role}):\n"${text}"${filesInfo}\n`;
-}).join('\n--------------------------------------------------\n') || 'No remarks recorded.'}
+${(ticket.original?.remarks || [])
+  .map((remark) => {
+    const sender = remark.addedBy?.name || 'Staff';
+    const dateStr = remark.addedAt ? new Date(remark.addedAt).toLocaleString() : '—';
+    return `[${dateStr}] ${sender}:\n"${remark.text || ''}"\n`;
+  })
+  .join('\n--------------------------------------------------\n') || 'No remarks recorded.'}
 
 6. ASSIGNMENT & ROUTING HISTORY
 --------------------------------------------------
-${(ticket.assignmentHistory || []).map((history, idx) => {
-  const dateStr = history.actionDate ? new Date(history.actionDate).toLocaleString() : '—';
-  const action = history.action === 'initial_assignment' ? 'Auto Assign' : history.action === 'assign' ? 'Assign' : 'Forward';
-  const remarks = history.remarks ? `\nRemarks: "${history.remarks}"` : '';
-  if (history.action === 'initial_assignment') {
-    return `[${dateStr}] Auto Assigned to Super Admin: ${history.assignedTo?.name || 'Super Admin'}${remarks}`;
-  } else if (history.action === 'assign') {
-    return `[${dateStr}] Assigned by ${history.assignedBy?.name || 'Super Admin'} to ${history.assignedTo?.name || 'Consultant'}${remarks}`;
-  } else {
-    return `[${dateStr}] Forwarded by ${history.forwardedBy?.name || 'Consultant'} to ${history.forwardedTo?.name || 'Consultant'}${remarks}`;
-  }
-}).join('\n--------------------------------------------------\n') || 'No assignment history recorded.'}
+${(ticket.original?.assignmentHistory || [])
+  .map((history) => {
+    const dateStr = history.actionDate ? new Date(history.actionDate).toLocaleString() : '—';
+    if (history.action === 'initial_assignment') {
+      return `[${dateStr}] Auto Assigned to Super Admin: ${history.assignedTo?.name || 'Super Admin'}`;
+    } else if (history.action === 'assign') {
+      return `[${dateStr}] Assigned by ${history.assignedBy?.name || 'Super Admin'} to ${
+        history.assignedTo?.name || 'Consultant'
+      }`;
+    } else {
+      return `[${dateStr}] Forwarded by ${history.forwardedBy?.name || 'Consultant'} to ${
+        history.forwardedTo?.name || 'Consultant'
+      }`;
+    }
+  })
+  .join('\n--------------------------------------------------\n') || 'No assignment history recorded.'}
 ==================================================`;
 
     const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
@@ -371,1093 +422,306 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
     URL.revokeObjectURL(url);
   };
 
-  const handleFileChange = (e) => {
-    if (e.target.files?.length) {
-      const files = Array.from(e.target.files);
-      setAdminFiles(prev => {
-        const next = [...prev, ...files];
-        const reflections = files.map(f => `\n[Attachment: ${f.name}]`).join('');
-        setSolution(prevSol => {
-          let cleanSol = prevSol || '';
-          if (!cleanSol.includes(reflections)) {
-            cleanSol += reflections;
-          }
-          return cleanSol;
-        });
-        return next;
-      });
-    }
-  };
-
-  const handleRemoveAdminFile = (indexToRemove) => {
-    const fileToRemove = adminFiles[indexToRemove];
-    setAdminFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
-    if (fileToRemove) {
-      setSolution(prevSol => {
-        const searchStr = `\n[Attachment: ${fileToRemove.name}]`;
-        return (prevSol || '').replace(searchStr, '');
-      });
-    }
-  };
-
-  const handleRemarkFileChange = (e) => {
-    if (e.target.files?.length) {
-      setRemarkFiles(Array.from(e.target.files));
+  // Forward ticket handler
+  const handleForwardSubmit = async () => {
+    if (!selectedAdminId) return alert('Please select a consultant first.');
+    setIsForwarding(true);
+    try {
+      const ccs = [...forwardCcConsultantIds];
+      if (forwardCcEmails.trim()) {
+        const extraEmails = forwardCcEmails
+          .split(',')
+          .map((e) => e.trim())
+          .filter((e) => e.includes('@'));
+        ccs.push(...extraEmails);
+      }
+      await forwardTicket(rawTicketId, selectedAdminId, forwardRemarks, ccs);
+      setSelectedAdminId('');
+      setForwardRemarks('');
+      setForwardCcConsultantIds([]);
+      setForwardCcEmails('');
+      setForwardCcDropdownOpen(false);
+      alert('Ticket forwarded successfully!');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to forward ticket.');
+    } finally {
+      setIsForwarding(false);
     }
   };
 
   if (!ticket) return null;
 
-  const canForward = user && (
-    user.role === 'superadmin' || user.role === 'Super Admin' || 
-    String(ticket.original?.assignedTo?._id || ticket.original?.assignedTo || ticket.assignee) === String(user._id || user.id)
-  );
+  const canForward =
+    user &&
+    (user.role === 'superadmin' ||
+      user.role === 'Super Admin' ||
+      String(ticket.original?.assignedTo?._id || ticket.original?.assignedTo || ticket.assignee) ===
+        String(user._id || user.id));
 
   return (
     <>
+      {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-[#020617]/80 dark:bg-[#020617]/90 backdrop-blur-xl z-[60]"
+        className="fixed inset-0 bg-[#020617]/80 dark:bg-[#020617]/90 backdrop-blur-md z-[60]"
       />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 40 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 40 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed inset-2 sm:inset-4 md:inset-10 z-[70] flex flex-col bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-[1.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden font-sans"
-      >
-        {/* Modern Header */}
-        <div className="px-4 sm:px-10 py-6 sm:py-8 border-b border-slate-200 dark:border-white/5 bg-gradient-to-r from-slate-100/50 to-slate-50/50 dark:from-[#1e293b]/50 dark:to-[#0f172a]/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden shrink-0">
-          <div className="absolute top-0 left-0 w-full h-full bg-blue-600/5 blur-[100px] pointer-events-none" />
-          
-          <div className="flex items-center gap-4 sm:gap-6 relative z-10 w-full sm:flex-1 min-w-0">
-            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-2xl shadow-blue-500/20 ring-4 ring-blue-500/10 shrink-0">
-              <ClipboardList size={24} className="sm:hidden" />
-              <ClipboardList size={32} className="hidden sm:block" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-1.5">
-                <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[9px] sm:text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">
-                  {ticket.ticketNumber || ticket.id.slice(-8).toUpperCase()}
-                </span>
-                <span className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest border ${
-                  status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border-emerald-500/20' :
-                  status === 'On Hold' ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20' :
-                  status === 'Cancelled' ? 'bg-slate-500/10 text-slate-505 dark:text-slate-400 border-slate-500/20' :
-                  'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-                }`}>
-                  {status}
-                </span>
-              </div>
-              <h2 className="text-xl sm:text-3xl font-black text-slate-800 dark:text-white tracking-tight leading-tight truncate pr-4" title={ticket.title}>{ticket.title}</h2>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-3 relative z-10 w-full sm:w-auto justify-between sm:justify-end shrink-0">
-            <div className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border flex items-center gap-2 text-[10px] sm:text-xs font-black uppercase tracking-widest ${
-              ticket.priority === 'High' || ticket.priority === 'Critical' ? 'bg-red-500/10 text-red-550 dark:text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-            }`}>
-              <AlertCircle size={14} /> {ticket.priority} Priority
-            </div>
-            <button 
-              onClick={handleDownloadTicketDetails}
-              className="p-2 sm:p-3 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-655 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-xl sm:rounded-2xl transition-all border border-slate-200 dark:border-white/5 flex items-center gap-1.5 text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-sm cursor-pointer"
-              title="Download Ticket Details"
-            >
-              <Download size={16} />
-              <span className="hidden sm:inline">Download</span>
-            </button>
-            <button onClick={onClose} className="p-2 sm:p-3 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-red-500/20 text-slate-655 dark:text-slate-400 hover:text-red-655 dark:hover:text-red-500 rounded-xl sm:rounded-2xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer">
-              <X size={20} className="sm:hidden" />
-              <X size={24} className="hidden sm:block" />
-            </button>
-          </div>
+      {/* Main Modal Shell */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        transition={{ duration: 0.2 }}
+        className="fixed inset-1 sm:inset-3 md:inset-6 z-[70] flex flex-col bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden font-sans"
+      >
+        {/* Header */}
+        <TicketDetailHeader
+          ticket={ticket}
+          status={status}
+          onDownloadReport={handleDownloadTicketDetails}
+          onClose={onClose}
+        />
+
+        {/* Responsive Tab Bar (Visible on mobile/tablets < xl) */}
+        <div className="xl:hidden flex items-center border-b border-slate-200 dark:border-white/5 bg-slate-100/80 dark:bg-[#111620] px-3 py-2 gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileTab('overview')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              mobileTab === 'overview'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/5'
+            }`}
+          >
+            <MessageSquare size={14} /> Overview & Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('operations')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              mobileTab === 'operations'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/5'
+            }`}
+          >
+            <Wrench size={14} /> Operations & Actions
+          </button>
         </div>
 
-        {/* Content Layout */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-slate-50/30 dark:bg-black/20">
-          
-          {/* Left Column: Details & History (Scrollable) */}
-          <div className="flex-[1.5] overflow-y-auto p-4 sm:p-10 pb-24 lg:pb-32 space-y-8 sm:space-y-12 custom-scrollbar border-r border-slate-200 dark:border-white/5 order-2 lg:order-1">
-            
-            {/* Context Grid */}
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${status === 'Resolved' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6`}>
-              <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-3xl p-6 hover:bg-slate-50 dark:hover:bg-white/[0.07] transition-colors group shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                   <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-550 dark:text-blue-400 group-hover:scale-110 transition-transform">
-                     <User size={20} />
-                   </div>
-                   <span className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest">Reporter</span>
-                </div>
-                <p className="text-lg font-bold text-slate-800 dark:text-white truncate">{ticket.user || ticket.original?.createdBy?.name || 'Unknown'}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1">{ticket.original?.createdBy?.email || 'No email provided'}</p>
-              </div>
+        {/* Dual-column / Tabbed Content Layout */}
+        <div className="flex-1 overflow-hidden flex flex-col xl:flex-row bg-slate-50/50 dark:bg-black/20">
+          {/* Left Column: Details, Files, Timeline, Conversation */}
+          <div
+            className={`flex-[1.4] overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 custom-scrollbar border-r border-slate-200 dark:border-white/5 ${
+              mobileTab === 'overview' ? 'block' : 'hidden xl:block'
+            }`}
+          >
+            {/* Context Cards */}
+            <TicketContextCards ticket={ticket} status={status} />
 
-              <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-3xl p-6 hover:bg-slate-50 dark:hover:bg-white/[0.07] transition-colors group shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                   <div className="w-10 h-10 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-550 dark:text-purple-400 group-hover:scale-110 transition-transform">
-                     <Building2 size={20} />
-                   </div>
-                   <span className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest">Department</span>
-                </div>
-                <p className="text-lg font-bold text-slate-800 dark:text-white truncate">{ticket.department}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1">{ticket.original?.category || 'General Category'}</p>
-              </div>
-
-              <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-3xl p-6 hover:bg-slate-50 dark:hover:bg-white/[0.07] transition-colors group shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                   <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-555 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-                     <Briefcase size={20} />
-                   </div>
-                   <span className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest">Client</span>
-                </div>
-                <p className="text-lg font-bold text-slate-800 dark:text-white truncate">{ticket.clientName || ticket.original?.createdBy?.client?.name || 'N/A'}</p>
-                <p className="text-xs text-slate-505 dark:text-slate-400 font-medium truncate mt-1">Ticket Raised By</p>
-              </div>
-
-              <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-3xl p-6 hover:bg-slate-50 dark:hover:bg-white/[0.07] transition-colors group shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                   <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-550 dark:text-amber-400 group-hover:scale-110 transition-transform">
-                     <Clock size={20} />
-                   </div>
-                   <span className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest">Logged On</span>
-                </div>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">{new Date(ticket.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">{new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-              </div>
-
-              {status === 'Resolved' && (
-                <div className="bg-white dark:bg-white/5 border border-emerald-500/10 rounded-3xl p-6 hover:bg-slate-50 dark:hover:bg-white/[0.07] transition-colors group shadow-sm">
-                  <div className="flex items-center gap-3 mb-3">
-                     <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-555 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-                       <CheckCircle size={20} />
-                     </div>
-                     <span className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest">Solved On</span>
-                  </div>
-                  {ticket.original?.solvedAt || ticket.original?.actualResolutionDate ? (
-                    <>
-                      <p className="text-lg font-bold text-emerald-650 dark:text-emerald-400">{new Date(ticket.original.solvedAt || ticket.original.actualResolutionDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">{new Date(ticket.original.solvedAt || ticket.original.actualResolutionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    </>
-                  ) : (
-                    <p className="text-lg font-bold text-slate-500 dark:text-slate-400">N/A</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Description Block */}
+            {/* Issue Description Block */}
             <section>
-              <div className="flex items-center gap-3 mb-4">
-                <Shield size={18} className="text-blue-500" />
-                <h3 className="text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">Issue Foundation</h3>
+              <div className="flex items-center gap-2.5 mb-3">
+                <Shield size={16} className="text-blue-500" />
+                <h3 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                  Issue Description
+                </h3>
               </div>
-              <div className="bg-slate-100/70 dark:bg-[#1e293b]/50 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] shadow-inner relative group overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Activity size={100} className="text-blue-500/10" />
-                </div>
-                <p className="text-lg text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap relative z-10">{ticket.description}</p>
+              <div className="bg-slate-100/70 dark:bg-[#1e293b]/50 border border-slate-200 dark:border-white/5 p-4 sm:p-6 rounded-2xl shadow-inner relative group overflow-hidden">
+                <p className="text-sm sm:text-base text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap relative z-10">
+                  {ticket.description || 'No description provided.'}
+                </p>
               </div>
             </section>
 
             {/* Associated Files */}
-            {((ticket.attachments?.length > 0 || ticket.original?.attachments?.length > 0) ||
-              (ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) ||
-              (ticket.supportingDocuments?.length > 0 || ticket.original?.supportingDocuments?.length > 0)) && (
-              <section className="space-y-6">
-                <div className="flex items-center gap-3">
-                  <File size={18} className="text-blue-500" />
-                  <h3 className="text-xs font-black text-slate-555 dark:text-slate-400 uppercase tracking-[0.2em]">Associated Files</h3>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {/* User/Ticket Attachments */}
-                  {(ticket.attachments?.length > 0 || ticket.original?.attachments?.length > 0) && (
-                    <div className="bg-slate-100/50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2rem] p-6 space-y-3">
-                      <h4 className="text-[11px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest mb-2">User Attachments</h4>
-                      {(ticket.attachments?.length > 0 ? ticket.attachments : (ticket.original?.attachments || [])).map((file, fIdx) => (
-                        <div 
-                          key={file._id || fIdx} 
-                          className="flex items-center gap-4 p-3.5 rounded-2xl border transition-all w-full text-left bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30 shadow-sm"
-                        >
-                          <div className="p-2.5 rounded-xl bg-blue-500/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 shrink-0">
-                            <File size={16} strokeWidth={2.5} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-black truncate uppercase tracking-tight text-slate-800 dark:text-white" title={file.originalName || file.filename}>
-                              {file.originalName || file.filename}
-                            </p>
-                            <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                              {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'N/A'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button 
-                              onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                              className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-505 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                              title="View File"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button 
-                              onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                              className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-emerald-500/20 text-slate-505 dark:text-slate-400 hover:text-emerald-650 dark:hover:text-emerald-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                              title="Download File"
-                            >
-                              <Download size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            <TicketAssociatedFiles
+              ticket={ticket}
+              rawTicketId={rawTicketId}
+              onViewAttachment={handleViewAttachment}
+              onDownloadAttachment={handleDownloadAttachment}
+            />
 
-                  {/* Consultant Attachments */}
-                  {(ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
-                    <div className="bg-slate-100/50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2rem] p-6 space-y-3">
-                      <h4 className="text-[11px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest mb-2">Consultant Attachments</h4>
-                      {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file, fIdx) => (
-                        <div 
-                          key={file._id || fIdx} 
-                          className="flex items-center gap-4 p-3.5 rounded-2xl border transition-all w-full text-left bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30 shadow-sm"
-                        >
-                          <div className="p-2.5 rounded-xl bg-emerald-500/10 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 shrink-0">
-                            <File size={16} strokeWidth={2.5} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-black truncate uppercase tracking-tight text-slate-800 dark:text-white" title={file.originalName || file.filename}>
-                              {file.originalName || file.filename}
-                            </p>
-                            <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                              {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'N/A'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button 
-                              onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                              className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-505 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                              title="View File"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button 
-                              onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                              className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-emerald-500/20 text-slate-505 dark:text-slate-400 hover:text-emerald-650 dark:hover:text-emerald-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                              title="Download File"
-                            >
-                              <Download size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            {/* Assignment & Routing History */}
+            <TicketHistoryTimeline
+              assignmentHistory={
+                ticket.original?.assignmentHistory || ticket.assignmentHistory || []
+              }
+            />
 
-                  {/* Supporting Documents */}
-                  {(ticket.supportingDocuments?.length > 0 || ticket.original?.supportingDocuments?.length > 0) && (
-                    <div className="bg-slate-100/50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2rem] p-6 space-y-3 col-span-1 sm:col-span-2">
-                      <h4 className="text-[11px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest mb-2">Supporting Documents</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {(ticket.supportingDocuments?.length > 0 ? ticket.supportingDocuments : (ticket.original?.supportingDocuments || [])).map((file, fIdx) => (
-                          <div 
-                            key={file._id || fIdx} 
-                            className="flex items-center gap-4 p-3.5 rounded-2xl border transition-all w-full text-left bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30 shadow-sm"
-                          >
-                            <div className="p-2.5 rounded-xl bg-purple-500/10 dark:bg-purple-600/20 text-purple-600 dark:text-purple-400 shrink-0">
-                              <File size={16} strokeWidth={2.5} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-black truncate uppercase tracking-tight text-slate-800 dark:text-white" title={file.originalName || file.filename}>
-                                {file.originalName || file.filename}
-                              </p>
-                              <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                                {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'N/A'}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button 
-                                onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                                className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-blue-500/20 text-slate-505 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                                title="View File"
-                              >
-                                <Eye size={14} />
-                              </button>
-                              <button 
-                                onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                className="p-2 bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-emerald-500/20 text-slate-505 dark:text-slate-400 hover:text-emerald-650 dark:hover:text-emerald-400 rounded-xl transition-all border border-slate-200 dark:border-white/5 cursor-pointer"
-                                title="Download File"
-                              >
-                                <Download size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* Assignment & Forwarding History */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-3">
-                <Clock size={18} className="text-blue-500 dark:text-blue-400" />
-                <h3 className="text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">Assignment & Forwarding History</h3>
-              </div>
-              <div className="bg-slate-100/50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2rem] p-8 shadow-inner">
-                {(!ticket.original?.assignmentHistory || ticket.original.assignmentHistory.length === 0) ? (
-                  <p className="text-[13px] text-slate-550 dark:text-slate-500 italic">No assignment history logged.</p>
-                ) : (
-                  <div className="relative border-l border-slate-200 dark:border-white/10 pl-6 ml-2.5 space-y-6">
-                    {ticket.original.assignmentHistory.map((item, index) => {
-                      const isInitial = item.action === 'initial_assignment';
-                      const isAssign = item.action === 'assign';
-                      const isForward = item.action === 'forward';
-
-                      return (
-                        <div key={index} className="relative">
-                          <div className={`absolute -left-[31px] top-1.5 w-3 h-3 rounded-full border-2 ${
-                            isInitial ? 'bg-blue-500 border-white dark:border-[#0f172a]' : isAssign ? 'bg-purple-500 border-white dark:border-[#0f172a]' : 'bg-amber-500 border-white dark:border-[#0f172a]'
-                          }`} />
-                          
-                          <div className="flex flex-col gap-1">
-                            <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-slate-700 dark:text-slate-300">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                                isInitial ? 'bg-blue-500/10 text-blue-650 dark:text-blue-400' : isAssign ? 'bg-purple-500/10 text-purple-655 dark:text-purple-400' : 'bg-amber-500/10 text-amber-655 dark:text-amber-400'
-                              }`}>
-                                {isInitial ? 'Auto Assign' : isAssign ? 'Assign' : 'Forward'}
-                              </span>
-                              <span className="font-bold text-slate-800 dark:text-white">
-                                {isInitial ? (
-                                  `Assigned to Super Admin: ${item.assignedTo?.name || 'Super Admin'}`
-                                ) : isAssign ? (
-                                  `${item.assignedBy?.name || 'Super Admin'} assigned to ${item.assignedTo?.name || 'Consultant'}`
-                                ) : (
-                                  `${item.forwardedBy?.name || 'Consultant'} forwarded to ${item.forwardedTo?.name || 'Consultant'}`
-                                )}
-                              </span>
-                            </div>
-                            
-                            {item.remarks && (
-                              <p className="text-[12px] text-slate-600 dark:text-slate-400 font-medium italic mt-1 bg-slate-200/50 dark:bg-black/20 p-2.5 rounded-xl border border-slate-200 dark:border-white/5">
-                                "{item.remarks}"
-                              </p>
-                            )}
-                            
-                            <span className="text-[10px] text-slate-505 font-semibold tracking-wider uppercase mt-1">
-                              {new Date(item.actionDate).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Conversation Flow */}
-            <section className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <History size={18} className="text-indigo-500 dark:text-indigo-400" />
-                  <h3 className="text-xs font-black text-slate-555 dark:text-slate-400 uppercase tracking-[0.2em]">Transmission History</h3>
-                </div>
-                <span className="px-3 py-1 bg-slate-100 dark:bg-white/5 rounded-full text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {ticket.original?.remarks?.length || 0} Events Logged
-                </span>
-              </div>
-
-              <div className="space-y-8 bg-slate-100/50 dark:bg-black/40 rounded-[3rem] p-10 border border-slate-200 dark:border-white/5 relative overflow-hidden">
-                <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
-                
-                {(!ticket.original?.remarks || ticket.original.remarks.length === 0) ? (
-                  <div className="text-center py-20 bg-slate-50/50 dark:bg-white/[0.01] rounded-[2rem] border border-slate-200 dark:border-white/5">
-                    <MessageSquare size={48} className="text-slate-450 dark:text-slate-800 mx-auto mb-4 opacity-50" />
-                    <p className="text-[10px] font-black text-slate-500 dark:text-slate-600 uppercase tracking-[0.4em]">Awaiting protocol initiation</p>
-                  </div>
-                ) : (
-                  ticket.original.remarks.map((remark, index) => {
-                     const isConsultantRole = remark.addedBy?.role === 'consultant' || remark.addedBy?.role === 'admin' || remark.addedBy?.role === 'superadmin';
-                     const senderName = remark.addedBy?.name || 'System';
-                     const isMe = String(remark.addedBy?._id || remark.addedBy) === String(user?._id || user?.id);
-                     
-                     // Align internal notes to the left to group with other logs/notes, keeping public support on the right.
-                     const alignLeft = !isConsultantRole || remark.isInternal;
-                     const isBlueBubble = isConsultantRole && !remark.isInternal;
-                     
-                     return (
-                       <div key={index} className={`flex ${alignLeft ? 'justify-start' : 'justify-end'} w-full group animate-in fade-in slide-in-from-bottom-6 duration-700`}>
-                         <div className={`max-w-[85%] flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
-                           <div className={`flex items-center gap-3 mb-3 px-4 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
-                             <div className={`w-9 h-9 rounded-2xl flex items-center justify-center text-[12px] font-black shadow-2xl transition-all group-hover:rotate-6 ${
-                               remark.isInternal
-                                 ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-black ring-4 ring-amber-500/10'
-                                 : isConsultantRole ? 'bg-blue-600 text-white ring-4 ring-blue-600/10' : 'bg-slate-350 dark:bg-slate-700 text-slate-850 dark:text-slate-300 ring-4 ring-slate-700/10'
-                             }`}>
-                               {senderName[0].toUpperCase()}
-                             </div>
-                             <div className={`flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
-                                <div className={`flex items-center gap-1.5 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
-                                  <span className={`text-[10px] font-black uppercase tracking-widest ${remark.isInternal ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                                    {senderName}
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
-                                    remark.isInternal
-                                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                                      : isConsultantRole 
-                                        ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' 
-                                        : 'bg-red-500/10 text-[#ED1B2F] border border-red-500/20'
-                                  }`}>
-                                    {remark.isInternal && <Lock size={8} />}
-                                    {remark.isInternal ? 'Internal' : isConsultantRole ? 'Support' : 'Client'}
-                                  </span>
-                                </div>
-                                <span className="text-[9px] text-slate-500 dark:text-slate-655 font-bold tracking-tighter mt-0.5">{new Date(remark.addedAt).toLocaleString([], { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}</span>
-                             </div>
-                           </div>
-                           
-                           <div className={`relative p-6 rounded-[2.5rem] shadow-sm dark:shadow-2xl border transition-all duration-500 hover:scale-[1.01] ${
-                             remark.isInternal
-                               ? 'bg-amber-50/60 dark:bg-[#1c160e]/50 border-amber-200/50 dark:border-white/5 border-l-4 border-l-amber-500 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-amber-900/5'
-                               : isConsultantRole ? 'bg-blue-600 border-blue-400/30 text-white rounded-tr-none' : 'bg-slate-200 dark:bg-[#1e293b] border-slate-300 dark:border-white/5 text-slate-800 dark:text-slate-200 rounded-tl-none'
-                           }`}>
-                             <p className="text-[15px] leading-relaxed whitespace-pre-wrap font-medium">{remark.text}</p>
-                             
-                             {remark.attachments?.length > 0 && (
-                                <div className={`mt-6 pt-5 border-t space-y-3 ${isBlueBubble ? 'border-white/20' : 'border-slate-300 dark:border-white/5'}`}>
-                                  {remark.attachments.map((file, fIdx) => (
-                                    <div key={fIdx} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all w-full text-left ${
-                                      isBlueBubble ? 'bg-white/10 border-white/10 hover:bg-white/20' : 'bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30'
-                                    }`}>
-                                      <div className={`p-2.5 rounded-xl ${isBlueBubble ? 'bg-white/20' : 'bg-blue-500/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400'}`}>
-                                        <File size={16} strokeWidth={2.5} />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[11px] font-black truncate uppercase tracking-tight text-slate-800 dark:text-white" title={file.originalName || file.filename}>{file.originalName || file.filename}</p>
-                                        <p className="text-[9px] font-bold opacity-50 uppercase tracking-widest text-slate-500 dark:text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <button 
-                                          onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                                          className={`p-2 rounded-xl transition-all border ${
-                                            isBlueBubble 
-                                              ? 'bg-white/5 hover:bg-white/20 border-white/10 text-white' 
-                                              : 'bg-slate-100 hover:bg-slate-205 dark:bg-white/5 dark:hover:bg-blue-500/20 border-slate-200 dark:border-white/5 text-slate-505 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400'
-                                          } cursor-pointer`}
-                                          title="View File"
-                                        >
-                                          <Eye size={14} />
-                                        </button>
-                                        <button 
-                                          onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                          className={`p-2 rounded-xl transition-all border ${
-                                            isBlueBubble 
-                                              ? 'bg-white/5 hover:bg-white/20 border-white/10 text-white' 
-                                              : 'bg-slate-100 hover:bg-slate-250 dark:bg-white/5 dark:hover:bg-emerald-500/20 border-slate-200 dark:border-white/5 text-slate-505 dark:text-slate-400 hover:text-emerald-655 dark:hover:text-emerald-400'
-                                          } cursor-pointer`}
-                                          title="Download File"
-                                        >
-                                          <Download size={14} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                             )}
-                           </div>
-                         </div>
-                       </div>
-                     );
-                  })
-                )}
-                
-                {/* Conversation Reply Input — visible for all non-Resolved tickets */}
-                {ticket.status !== 'Resolved' && (
-                  <div className="border-t border-slate-200 dark:border-white/10 pt-6 mt-6 space-y-4 relative z-10">
-                    <div className="flex flex-wrap items-center gap-3 mb-1.5 ml-1">
-                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Reply Destination / Visibility</span>
-                      <div className="flex bg-slate-200/50 dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
-                        <button
-                          type="button"
-                          onClick={() => setIsInternal(false)}
-                          className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
-                            !isInternal
-                              ? 'bg-blue-650 text-white shadow-md'
-                              : 'text-slate-550 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                          }`}
-                        >
-                          <MessageSquare size={11} /> Public Update
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsInternal(true)}
-                          className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
-                            isInternal
-                              ? 'bg-amber-500 text-black shadow-md font-bold'
-                              : 'text-slate-555 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                          }`}
-                        >
-                          <Lock size={11} /> Internal Note
-                        </button>
-                      </div>
-                    </div>
-                    <div className="relative group/reply">
-                      <textarea 
-                        value={reply} 
-                        onChange={(e) => setReply(e.target.value)} 
-                        rows={4} 
-                        placeholder={isInternal ? "Share confidential notes or collaborate with other assigned consultants (hidden from client)..." : "Provide conversational updates to the user..."} 
-                        className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] px-6 py-5 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none transition-all resize-none shadow-sm pr-32 ${
-                          isInternal 
-                            ? 'border-amber-500/30 focus:border-amber-500/60 shadow-amber-500/5 bg-amber-500/[0.01] dark:bg-amber-500/[0.02]' 
-                            : 'border-slate-200 dark:border-white/10 focus:border-blue-500/50'
-                        }`}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                            e.preventDefault();
-                            handleSendRemark();
-                          }
-                        }}
-                      />
-                      <div className="absolute right-4 bottom-4 flex items-center gap-2">
-                        {remarkFiles.length > 0 && <span className={`text-[9px] px-2.5 py-1 rounded-full font-black animate-pulse ${isInternal ? 'bg-amber-500 text-black' : 'bg-blue-600 text-white'}`}>{remarkFiles.length} FILES</span>}
-                        <button type="button" onClick={() => remarkFileInputRef.current?.click()} className="p-3 bg-slate-100 hover:bg-slate-200 dark:bg-[#1e293b]/50 dark:hover:bg-blue-500/20 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-lg cursor-pointer" title="Attach Files">
-                          <UploadCloud size={20} />
-                        </button>
-                        <input type="file" ref={remarkFileInputRef} multiple className="hidden" onChange={handleRemarkFileChange} />
-                        <button 
-                          type="button"
-                          onClick={handleSendRemark}
-                          disabled={isSendingChat || (!reply.trim() && remarkFiles.length === 0)}
-                          className={`p-3 rounded-2xl transition-all shadow-lg disabled:opacity-50 cursor-pointer ${
-                            isInternal
-                              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-amber-600/20'
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
-                          }`}
-                          title={isInternal ? 'Send Internal Note' : 'Send Message'}
-                        >
-                          {isInternal ? <Lock size={20} /> : <Send size={20} />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
+            {/* Conversation Stream & Reply Input */}
+            <TicketConversation
+              ticket={ticket}
+              currentUser={user}
+              rawTicketId={rawTicketId}
+              reply={reply}
+              setReply={setReply}
+              remarkFiles={remarkFiles}
+              setRemarkFiles={setRemarkFiles}
+              isInternal={isInternal}
+              setIsInternal={setIsInternal}
+              isSendingChat={isSendingChat}
+              onSendRemark={handleSendRemark}
+              onViewAttachment={handleViewAttachment}
+              onDownloadAttachment={handleDownloadAttachment}
+            />
           </div>
 
-          {/* Right Column: Resolution Console & Documents (Scrollable) */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-10 pb-24 lg:pb-32 space-y-8 sm:space-y-12 bg-slate-100/60 dark:bg-[#1e293b]/20 custom-scrollbar order-1 lg:order-2 max-h-[60vh] lg:max-h-full border-b lg:border-b-0 border-slate-200 dark:border-white/5">
-            
-            {/* Status & Effort */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-3">
-                <Settings size={18} className="text-slate-500 dark:text-slate-400" />
-                <h3 className="text-xs font-black text-slate-555 dark:text-slate-400 uppercase tracking-[0.2em]">Operational Controls</h3>
+          {/* Right Column: Operational Controls, Forwarding, Work Logs, Resolution */}
+          <div
+            className={`flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 bg-slate-100/40 dark:bg-[#1e293b]/20 custom-scrollbar ${
+              mobileTab === 'operations' ? 'block' : 'hidden xl:block'
+            }`}
+          >
+            {/* Operational Controls */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2.5">
+                <Settings size={16} className="text-slate-500 dark:text-slate-400" />
+                <h3 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                  Operational Controls
+                </h3>
               </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Lifecycle Status</label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-0.5">
+                    Lifecycle Status
+                  </label>
                   <div className="relative">
-                    <select 
-                      value={status} 
-                      onChange={(e) => setStatus(e.target.value)} 
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
                       disabled={ticket.status === 'Resolved'}
-                      className="w-full bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-[1.2rem] px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all appearance-none cursor-pointer shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="w-full bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 appearance-none cursor-pointer shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <option value="Open">Open Protocol</option>
+                      <option value="Open">Open</option>
                       <option value="On Hold">On Hold</option>
                       <option value="Cancelled">Cancelled</option>
-                      <option value="Resolved">Resolution Complete</option>
+                      <option value="Resolved">Resolved</option>
                     </select>
-                    <Tag size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-555 pointer-events-none" />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-widest ml-1">Total Effort</label>
-                  <div className="h-[58px] bg-gradient-to-br from-blue-600/10 to-indigo-600/10 dark:from-blue-600/20 dark:to-indigo-600/20 border border-blue-500/20 rounded-[1.2rem] flex items-center px-6 shadow-sm dark:shadow-xl">
-                    <span className="text-[13px] font-black text-blue-600 dark:text-blue-400 tabular-nums">{formatHoursToHM(grandTotalHours)}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Forwarding Console */}
-            {canForward && ticket.status !== 'Resolved' && (
-              <section className="space-y-4 bg-white dark:bg-[#1e293b]/40 p-6 rounded-[2rem] border border-blue-500/25 dark:border-blue-500/20 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <Shield size={18} className="text-blue-500 dark:text-blue-400" />
-                  <h3 className="text-xs font-black text-blue-550 dark:text-blue-455 uppercase tracking-[0.2em]">Forwarding Console</h3>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Select Consultant to Forward To</label>
-                    <select
-                      value={selectedAdminId}
-                      onChange={(e) => setSelectedAdminId(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer disabled:opacity-60"
-                      disabled={adminsLoading && admins.length === 0}
-                    >
-                      <option value="">
-                        {adminsLoading && admins.length === 0 ? 'Loading consultants...' : '-- Choose Consultant --'}
-                      </option>
-                      {admins.filter(a => (a._id || a.id) !== (user?._id || user?.id) && a.status === 'active').map(consultant => (
-                        <option key={consultant._id || consultant.id} value={consultant._id || consultant.id} className="bg-white dark:bg-[#0f172a] text-slate-800 dark:text-white">
-                          {consultant.name} ({consultant.email})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-2 relative">
-                    <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">CC Consultants (Optional)</label>
-                    <div 
-                      onClick={() => setForwardCcDropdownOpen(!forwardCcDropdownOpen)}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold flex justify-between items-center cursor-pointer select-none"
-                    >
-                      <span>
-                        {forwardCcConsultantIds.length === 0 
-                          ? '-- Choose CCs --' 
-                          : `${forwardCcConsultantIds.length} Selected`}
-                      </span>
-                      <ChevronRight size={14} className={`text-slate-400 transition-transform ${forwardCcDropdownOpen ? 'rotate-90' : ''}`} />
-                    </div>
-                    {forwardCcDropdownOpen && (
-                      <div className="absolute top-[100%] left-0 right-0 mt-1 bg-white dark:bg-[#1a202c] border border-slate-200 dark:border-white/10 rounded-xl max-h-[120px] overflow-y-auto p-2.5 z-20 space-y-1.5 shadow-xl custom-scrollbar">
-                        {admins.filter(a => {
-                          const assignedId = ticket.assignedTo?._id || ticket.assignedTo?.id || ticket.original?.assignedTo?._id || ticket.original?.assignedTo?.id;
-                          return a.status === 'active' && 
-                            String(a._id || a.id) !== String(assignedId) && 
-                            String(a._id || a.id) !== String(selectedAdminId);
-                        }).map(c => {
-                          const isChecked = forwardCcConsultantIds.includes(c._id || c.id);
-                          return (
-                            <label 
-                              key={c._id || c.id} 
-                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer select-none text-[11px]"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {
-                                  setForwardCcConsultantIds(prev => prev.includes(c._id || c.id) ? prev.filter(id => id !== (c._id || c.id)) : [...prev, (c._id || c.id)]);
-                                }}
-                                className="rounded text-blue-600 focus:ring-0 cursor-pointer"
-                              />
-                              <span className="truncate text-slate-700 dark:text-slate-200">{c.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-slate-550 dark:text-slate-500 uppercase tracking-widest ml-1">Additional CC Email Addresses (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. boss@company.com, tech@company.com"
-                      value={forwardCcEmails}
-                      onChange={(e) => setForwardCcEmails(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-xs font-bold focus:outline-none focus:border-blue-500/50 shadow-inner placeholder:text-slate-400"
-                    />
-                    <span className="text-[9px] text-slate-500 font-medium ml-1">Separate multiple email addresses with commas.</span>
-                  </div>
-                  
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-widest ml-1">Forwarding Remarks</label>
-                    <textarea
-                      placeholder="Reason for forwarding or instructions..."
-                      value={forwardRemarks}
-                      onChange={(e) => setForwardRemarks(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-blue-500/50 min-h-[60px] resize-none"
+                    <Tag
+                      size={14}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                     />
                   </div>
-                  
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!selectedAdminId) return alert('Please select a consultant first.');
-                        setIsForwarding(true);
-                        try {
-                          const ccs = [...forwardCcConsultantIds];
-                          if (forwardCcEmails.trim()) {
-                            const extraEmails = forwardCcEmails.split(',').map(e => e.trim()).filter(e => e.includes('@'));
-                            ccs.push(...extraEmails);
-                          }
-                          await forwardTicket(rawTicketId, selectedAdminId, forwardRemarks, ccs);
-                          setSelectedAdminId('');
-                          setForwardRemarks('');
-                          setForwardCcConsultantIds([]);
-                          setForwardCcEmails('');
-                          setForwardCcDropdownOpen(false);
-                          alert('Ticket forwarded successfully!');
-                        } catch (err) {
-                          alert(err.response?.data?.message || 'Failed to forward ticket.');
-                        } finally {
-                          setIsForwarding(false);
-                        }
-                      }}
-                      disabled={isForwarding || !selectedAdminId}
-                      className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/10 disabled:opacity-50 transition-all cursor-pointer"
-                    >
-                      {isForwarding ? 'Forwarding...' : 'Forward Ticket'}
-                    </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-0.5">
+                    Cumulative Effort
+                  </label>
+                  <div className="h-[42px] bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center px-4 shadow-sm">
+                    <span className="text-xs font-black text-blue-600 dark:text-blue-400 tabular-nums">
+                      {formatHoursToHM(grandTotalHours)}
+                    </span>
                   </div>
                 </div>
-              </section>
-            )}
-
-            {/* Work Logs */}
-            <section className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Activity size={18} className="text-emerald-500 dark:text-emerald-400" />
-                  <h3 className="text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-[0.2em]">Effort Logging</h3>
-                </div>
-                {/* Always allow adding effort entries, even on resolved tickets */}
-                <button onClick={addWorkLogRow} className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-black text-emerald-650 dark:text-emerald-400 uppercase tracking-widest transition-all cursor-pointer">
-                  <Plus size={12} strokeWidth={3} /> Append Entry
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <AnimatePresence>
-                  {workLogEntries.map((entry, idx) => (
-                    <motion.div 
-                      key={idx} 
-                      initial={{ opacity: 0, x: 20 }} 
-                      animate={{ opacity: 1, x: 0 }} 
-                      exit={{ opacity: 0, scale: 0.95 }} 
-                      className="flex flex-wrap gap-2.5 items-center w-full bg-slate-100/30 dark:bg-white/[0.02] sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-slate-200/50 dark:border-white/5 sm:border-0"
-                    >
-                      {/* Date Input with fixed width to prevent it from crowding time inputs */}
-                      <div className="w-[135px] sm:w-[145px] shrink-0">
-                        <input 
-                          type="date" 
-                          value={entry.date} 
-                          onChange={e => updateWorkLogRow(idx, 'date', e.target.value)} 
-                          className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl px-3 py-3 text-sm font-medium focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner" 
-                        />
-                      </div>
-                      
-                      {/* Hours & Minutes inputs grouped so they share remaining space dynamically */}
-                      <div className="flex-1 min-w-[145px] flex gap-2">
-                        <div className="relative flex-1">
-                          <input 
-                            type="number" 
-                            min="0" 
-                            placeholder="Hours" 
-                            value={entry.hours} 
-                            onChange={e => updateWorkLogRow(idx, 'hours', e.target.value)} 
-                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-3 pr-8 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right placeholder:text-slate-405" 
-                          />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">hrs</span>
-                        </div>
-                        <div className="relative flex-1">
-                          <input 
-                            type="number" 
-                            min="0" 
-                            max="59" 
-                            placeholder="Mins" 
-                            value={entry.minutes} 
-                            onChange={e => updateWorkLogRow(idx, 'minutes', e.target.value)} 
-                            className="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white rounded-xl pl-3 pr-8 py-3 text-sm font-black focus:outline-none focus:border-emerald-500/50 transition-all shadow-inner tabular-nums text-right placeholder:text-slate-405" 
-                          />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold uppercase pointer-events-none">mins</span>
-                        </div>
-                      </div>
-                      
-                      {/* Trash Button */}
-                      <button 
-                        onClick={() => removeWorkLogRow(idx)} 
-                        disabled={workLogEntries.length === 1} 
-                        className="p-3 text-slate-500 hover:text-red-600 disabled:opacity-0 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer shrink-0"
-                        title="Remove Log Entry"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-
-              {/* Quick save button for resolved tickets — only submits workLogs */}
-              {ticket.status === 'Resolved' && validEntries.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleSaveWorkLogsOnly}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-2xl text-[11px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest transition-all cursor-pointer"
-                >
-                  <Activity size={14} /> Save Effort Hours
-                </button>
-              )}
-            </section>
-
-            {/* Resolution Form */}
-            <section className="space-y-6">
-              <div className="space-y-3">
-                <label className={`text-[10px] font-black uppercase tracking-widest ml-1 flex items-center gap-2 ${status === 'Resolved' ? 'text-emerald-500' : 'text-slate-500'}`}>
-                  {status === 'Resolved' && <CheckCircle size={14} />} Final Technical Solution {status === 'Resolved' && '*'}
-                </label>
-                
-                <div className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-[2rem] p-6 space-y-4 focus-within:border-blue-500/50 transition-all shadow-sm ${
-                  status === 'Resolved' ? 'border-emerald-500/30 focus:border-emerald-500 shadow-emerald-500/5' : 'border-slate-200 dark:border-white/5 focus-within:border-blue-500/50'
-                }`}>
-                  <textarea 
-                    value={solution} 
-                    onChange={(e) => setSolution(e.target.value)} 
-                    disabled={ticket.status === 'Resolved'}
-                    rows={4} 
-                    placeholder="Comprehensive summary of the permanent fix..." 
-                    className="w-full bg-transparent border-0 text-[15px] font-medium text-slate-800 dark:text-white focus:outline-none resize-none disabled:opacity-60 disabled:cursor-not-allowed"
-                  />
-                  
-                  {/* File Upload Trigger integrated inside the box */}
-                  {ticket.status !== 'Resolved' && (
-                    <div className="border-t border-slate-200 dark:border-white/5 pt-4 flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-wider">Solution Attachments</span>
-                        <button 
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl text-[10px] font-black text-blue-605 dark:text-blue-405 uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
-                        >
-                          <UploadCloud size={14} /> Attach Files
-                        </button>
-                        <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileChange} />
-                      </div>
-                      
-                      {adminFiles.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {adminFiles.map((f, i) => (
-                            <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-lg uppercase tracking-tighter animate-in zoom-in">
-                              <span className="truncate max-w-[150px]">{f.name}</span>
-                              <button 
-                                type="button" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveAdminFile(i);
-                                }}
-                                className="text-white/85 hover:text-white hover:scale-110 transition-all font-black text-xs cursor-pointer ml-1"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Show already uploaded Knowledge Base Attachments inside the card for Resolved tickets */}
-                  {ticket.status === 'Resolved' && (ticket.adminAttachments?.length > 0 || ticket.original?.adminAttachments?.length > 0) && (
-                    <div className="border-t border-slate-200 dark:border-white/5 pt-4 flex flex-col gap-3">
-                      <span className="text-[10px] font-black text-slate-555 dark:text-slate-500 uppercase tracking-wider">Knowledge Base Attachments</span>
-                      <div className="flex flex-col gap-2">
-                        {(ticket.adminAttachments?.length > 0 ? ticket.adminAttachments : (ticket.original?.adminAttachments || [])).map((file, i) => (
-                          <div key={file._id || i} className="bg-slate-100/50 dark:bg-black/25 border border-slate-200/50 dark:border-white/5 p-3 rounded-xl flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-3 overflow-hidden">
-                              <div className="p-2 bg-emerald-500/10 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 shrink-0">
-                                <File size={16} strokeWidth={2.5} />
-                              </div>
-                              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">{file.originalName || file.filename}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button 
-                                type="button"
-                                onClick={(e) => handleViewAttachment(e, rawTicketId, file._id, file.originalName || file.filename, file.mimeType || file.contentType)}
-                                className="p-2 bg-white dark:bg-black/40 hover:bg-slate-50 dark:hover:bg-black/60 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer flex items-center justify-center"
-                                title="View Attachment"
-                              >
-                                <Eye size={16} />
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={(e) => handleDownloadAttachment(e, rawTicketId, file._id, file.originalName || file.filename)}
-                                className="p-2 bg-white dark:bg-black/40 hover:bg-slate-50 dark:hover:bg-black/60 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition-colors border border-slate-200 dark:border-white/5 cursor-pointer flex items-center justify-center"
-                                title="Download Attachment"
-                              >
-                                <Download size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             </section>
+
+            {/* Inline Forwarding Console */}
+            <TicketForwardingSection
+              canForward={canForward}
+              ticket={ticket}
+              admins={admins}
+              adminsLoading={adminsLoading}
+              currentUser={user}
+              selectedAdminId={selectedAdminId}
+              setSelectedAdminId={setSelectedAdminId}
+              forwardCcConsultantIds={forwardCcConsultantIds}
+              setForwardCcConsultantIds={setForwardCcConsultantIds}
+              forwardCcEmails={forwardCcEmails}
+              setForwardCcEmails={setForwardCcEmails}
+              forwardRemarks={forwardRemarks}
+              setForwardRemarks={setForwardRemarks}
+              forwardCcDropdownOpen={forwardCcDropdownOpen}
+              setForwardCcDropdownOpen={setForwardCcDropdownOpen}
+              isForwarding={isForwarding}
+              onForwardSubmit={handleForwardSubmit}
+            />
+
+            {/* Work Logs Section */}
+            <TicketWorkLogsSection
+              ticket={ticket}
+              consultants={admins}
+              currentUser={user}
+              workLogEntries={workLogEntries}
+              onAddRow={addWorkLogRow}
+              onRemoveRow={removeWorkLogRow}
+              onUpdateRow={updateWorkLogRow}
+              onSaveWorkLogsOnly={handleSaveWorkLogsOnly}
+              isSaving={isSavingEffort}
+            />
+
+            {/* Technical Resolution Section */}
+            <TicketResolutionSection
+              ticket={ticket}
+              rawTicketId={rawTicketId}
+              status={status}
+              solution={solution}
+              setSolution={setSolution}
+              adminFiles={adminFiles}
+              setAdminFiles={setAdminFiles}
+              onViewAttachment={handleViewAttachment}
+              onDownloadAttachment={handleDownloadAttachment}
+            />
           </div>
         </div>
 
-        {/* Global Footer */}
-        <div className="px-6 sm:px-10 py-6 sm:py-8 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#0a0f1a]/80 backdrop-blur-2xl flex flex-col sm:flex-row justify-between items-center gap-6 sticky bottom-0 z-[80] shrink-0">
-           <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-start">
-              <div className="flex flex-col">
-                <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Cumulative Effort</span>
-                <p className="text-lg sm:text-xl font-black text-slate-850 dark:text-white tabular-nums tracking-tighter">{formatHoursToHM(grandTotalHours)}</p>
-              </div>
-              <div className="w-px h-8 sm:h-10 bg-slate-200 dark:bg-white/10 hidden xs:block" />
-              <div className="flex flex-col hidden xs:flex">
-                <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Assigned To</span>
-                <p className="text-[12px] sm:text-[14px] font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px] sm:max-w-none">{ticket.assignee || 'Unassigned Support'}</p>
-              </div>
-           </div>
-
-           <div className="flex gap-3 sm:gap-4 w-full sm:w-auto">
-              <button 
-                onClick={onClose} 
-                className="flex-1 sm:flex-none px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] cursor-pointer"
-              >
-                {ticket.status === 'Resolved' ? 'Close' : 'Discard'}
-              </button>
-              {ticket.status !== 'Resolved' && (
-                <motion.button 
-                  whileHover={{ scale: 1.02 }} 
-                  whileTap={{ scale: 0.98 }} 
-                  onClick={handleSubmit} 
-                  className={`flex-[2] sm:flex-none px-6 sm:px-12 py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-2 sm:gap-3 transition-all cursor-pointer ${
-                    isInternal
-                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-[0_20px_40px_rgba(245,158,11,0.2)]'
-                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_20px_40px_rgba(37,99,235,0.2)]'
-                  }`}
-                >
-                  {isInternal ? 'Submit Note' : 'Submit'}
-                  {isInternal ? (
-                    <>
-                      <Lock size={16} strokeWidth={3} className="hidden sm:block" />
-                      <Lock size={14} strokeWidth={3} className="sm:hidden" />
-                    </>
-                  ) : (
-                    <>
-                      <Send size={16} strokeWidth={3} className="hidden sm:block" />
-                      <Send size={14} strokeWidth={3} className="sm:hidden" />
-                    </>
-                  )}
-                </motion.button>
-              )}
+        {/* Global Bottom Actions Bar */}
+        <div className="px-4 sm:px-8 py-3 sm:py-4 border-t border-slate-200 dark:border-white/5 bg-slate-50/90 dark:bg-[#0a0f1a]/95 backdrop-blur-md flex flex-wrap justify-between items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">
+                Total Effort
+              </span>
+              <p className="text-sm sm:text-base font-black text-slate-800 dark:text-white tabular-nums">
+                {formatHoursToHM(grandTotalHours)}
+              </p>
             </div>
+            <div className="w-px h-6 bg-slate-200 dark:bg-white/10 hidden sm:block" />
+            <div className="hidden sm:block">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">
+                Assigned
+              </span>
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[140px]">
+                {ticket.assignee || 'Unassigned'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all text-xs font-black uppercase tracking-wider cursor-pointer"
+            >
+              {ticket.status === 'Resolved' ? 'Close' : 'Discard'}
+            </button>
+            {ticket.status !== 'Resolved' && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleSubmit}
+                className={`px-5 sm:px-8 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  isInternal
+                    ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-md shadow-amber-500/20'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md shadow-blue-500/20'
+                }`}
+              >
+                <span>{isInternal ? 'Submit Note' : 'Submit'}</span>
+                {isInternal ? <Lock size={14} /> : <Send size={14} />}
+              </motion.button>
+            )}
+          </div>
         </div>
       </motion.div>
 
-      {/* Inline File Preview Modal */}
-      <AnimatePresence>
-        {previewFile && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                window.URL.revokeObjectURL(previewFile.url);
-                setPreviewFile(null);
-              }}
-              className="fixed inset-0 bg-[#020617]/90 backdrop-blur-2xl z-[90]"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 40 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 40 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-4 sm:inset-10 md:inset-16 z-[100] flex flex-col bg-[#111620] border border-white/10 rounded-[2.5rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden font-sans"
-            >
-              {/* Modal Header */}
-              <div className="px-8 py-5 border-b border-white/5 bg-[#181f2b] flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-3">
-                  <File size={22} className="text-blue-500" />
-                  <span className="text-[14px] font-black text-white truncate max-w-xs sm:max-w-md uppercase tracking-wider">{previewFile.filename}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = previewFile.url;
-                      a.download = previewFile.filename;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                    }}
-                    className="p-2.5 bg-white/5 hover:bg-emerald-500/20 text-slate-455 hover:text-emerald-400 rounded-xl transition-all border border-white/5 cursor-pointer"
-                    title="Download File"
-                  >
-                    <Download size={18} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      window.URL.revokeObjectURL(previewFile.url);
-                      setPreviewFile(null);
-                    }}
-                    className="p-2.5 bg-white/5 hover:bg-red-500/20 text-slate-455 hover:text-red-400 rounded-xl transition-all border border-white/5 cursor-pointer"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Content */}
-              <div className="flex-1 overflow-auto p-8 flex flex-col items-center justify-center bg-[#020617]">
-                {previewFile.mimeType?.startsWith('image/') ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <img
-                      src={previewFile.url}
-                      alt={previewFile.filename}
-                      className="max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/5"
-                    />
-                  </div>
-                ) : previewFile.mimeType === 'application/pdf' ? (
-                  <iframe
-                    src={previewFile.url}
-                    className="w-full h-full min-h-[65vh] rounded-2xl border border-white/5 bg-white"
-                    title={previewFile.filename}
-                  />
-                ) : previewFile.excelData ? (
-                  <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
-                    {renderExcelTable(previewFile.excelData)}
-                  </div>
-                ) : previewFile.filename?.toLowerCase()?.endsWith('.csv') ? (
-                  <div className="w-full h-full min-h-[55vh] flex flex-col items-stretch justify-stretch">
-                    {renderCSVTable(previewFile.textContent)}
-                  </div>
-                ) : previewFile.textContent ? (
-                  <pre className="w-full text-left bg-[#111620] text-slate-300 p-8 rounded-2xl overflow-auto max-h-[70vh] font-mono text-[13px] whitespace-pre-wrap border border-white/5 shadow-inner custom-scrollbar">
-                    {previewFile.textContent}
-                  </pre>
-                ) : (
-                  <div className="text-center p-12 bg-white/[0.02] border border-white/5 rounded-3xl max-w-md">
-                    <File size={48} className="text-slate-600 mx-auto mb-4 opacity-50" />
-                    <p className="text-[13px] font-black text-slate-400 uppercase tracking-widest mb-4">Inline Preview Unavailable</p>
-                    <p className="text-[11px] text-slate-500 font-medium mb-6">This file type ({previewFile.mimeType || 'unknown'}) cannot be displayed inline.</p>
-                    <button
-                      onClick={() => {
-                        const a = document.createElement('a');
-                        a.href = previewFile.url;
-                        a.download = previewFile.filename;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                      }}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg cursor-pointer"
-                    >
-                      Download to View
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Universal Inline File Preview Modal */}
+      <FilePreviewModal previewFile={previewFile} onClose={() => setPreviewFile(null)} />
     </>
   );
 }

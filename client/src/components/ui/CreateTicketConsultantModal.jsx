@@ -294,14 +294,14 @@ export default function CreateTicketConsultantModal({ isOpen, onClose }) {
                       if (erpTypes.length === 0) return null;
                       return (
                         <div className="space-y-2">
-                          <label className="text-[13px] font-bold text-slate-300 uppercase tracking-widest">ERP Incident Type *</label>
+                          <label className="text-[13px] font-bold text-slate-300 uppercase tracking-widest">Ticket Type *</label>
                           <select 
                             value={formData.erpIncidentType}
                             onChange={(e) => setFormData(p => ({ ...p, erpIncidentType: e.target.value }))}
                             className="w-full bg-[#1d2633] border border-white/5 text-white rounded-xl px-4 py-3.5 focus:outline-none focus:border-blue-500/50 transition-all font-medium appearance-none shadow-inner"
                             required
                           >
-                            <option value="">Select ERP Incident Type</option>
+                            <option value="">Select Ticket Type</option>
                             {erpTypes.map(t => (
                               <option key={t} value={t}>{t}</option>
                             ))}

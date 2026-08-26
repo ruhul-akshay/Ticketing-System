@@ -456,7 +456,7 @@ export default function ClientsManagement() {
 
                  {formData.erpDetails.erpName && (
                    <div>
-                     <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">ERP Incident Types</label>
+                     <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Ticket Types</label>
                      <div className="flex flex-wrap gap-4">
                         {incidentTypeOptions.map(t => (
                           <label key={t} className="flex items-center gap-2 cursor-pointer text-sm text-slate-300 font-bold bg-white/5 px-3 py-2 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
@@ -655,7 +655,7 @@ export default function ClientsManagement() {
                    )}
                    {selectedClient.erpDetails.erpIncidentTypes?.length > 0 && (
                      <div className="col-span-2 space-y-1.5">
-                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest block">Authorized Incident Data Streams</span>
+                       <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest block">Authorized Ticket Types</span>
                        <div className="flex flex-wrap gap-2 mt-1">
                          {selectedClient.erpDetails.erpIncidentTypes.map(t => (
                            <span key={t} className="text-[10px] bg-slate-200/50 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-xl font-bold uppercase tracking-tight">{t}</span>

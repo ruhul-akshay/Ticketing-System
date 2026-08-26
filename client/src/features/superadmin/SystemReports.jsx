@@ -896,7 +896,7 @@ export default function SystemReports() {
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-500 font-semibold mt-4">
-                        Average time to solve resolved support incident tickets
+                        Average time to solve resolved support tickets
                       </div>
                     </div>
 
@@ -917,10 +917,10 @@ export default function SystemReports() {
                     </div>
                   </div>
 
-                  {/* Incident Tickets Detailed Breakdown */}
+                  {/* Tickets Detailed Breakdown */}
                   <div className="bg-slate-100/50 dark:bg-[#181f2b]/40 border border-slate-200 dark:border-white/5 p-6 rounded-2xl space-y-4">
                     <h4 className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <ClipboardList size={14} className="text-blue-500 dark:text-blue-400" /> Incident Tickets Status Breakdown
+                      <ClipboardList size={14} className="text-blue-500 dark:text-blue-400" /> Tickets Status Breakdown
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                       <div className="bg-slate-200/50 dark:bg-black/20 p-4 rounded-xl text-center border border-slate-200 dark:border-white/5">

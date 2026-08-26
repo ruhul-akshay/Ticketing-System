@@ -80,7 +80,10 @@ const ticketSchema = new mongoose.Schema({
   /* ===== STATUS & PRIORITY ===== */
   status: {
     type: String,
-    enum: ['pending', 'assigned', 'resolved', 'closed', 'cancelled', 'hold', 'on hold'],
+    enum: [
+      'open', 'pending', 'assigned', 'resolved', 'closed', 'cancelled', 'hold', 'on hold',
+      'Open', 'Pending', 'Assigned', 'Resolved', 'Closed', 'Cancelled', 'Hold', 'On Hold'
+    ],
     default: 'pending'
   },
 

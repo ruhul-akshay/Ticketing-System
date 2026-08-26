@@ -6,6 +6,7 @@ import PreAssignmentRule from '../models/PreAssignmentRule.js';
 import LeaveRequest from '../models/LeaveRequest.js';
 import { generateTicketNumber, isValidObjectId } from '../utils/ticket.helpers.js';
 import Holiday from '../models/Holiday.js';
+import Notification from '../models/Notification.js';
 import { AppError } from '../utils/AppError.js';
 import { logger }   from '../utils/logger.js';
 
@@ -204,11 +205,12 @@ export const getTickets = async (currentUser) => {
       { path: 'assignmentHistory.assignedTo', select: 'name email role' },
       { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
       { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+      { path: 'workLogs.addedBy', select: 'name email role' },
       { path: 'client', select: 'name' },
       { path: 'clientUser', select: 'name email' }
     ])
     .select('-attachments.data -adminAttachments.data -supportingDocuments.data')
-    .sort({ createdAt: -1 });
+    .sort({ updatedAt: -1, createdAt: -1 });
 
   return tickets.map(t => {
     const tObj = t.toObject();
@@ -537,6 +539,19 @@ export const createTicket = async (currentUser, data, files = {}) => {
       .catch(err => console.error('CONSULTANT EMAIL ERROR:', err.message));
   }
 
+  // Create in-app notification document so all users receive the new ticket notification in navbar bell
+  try {
+    const creatorName = creatorUser?.name || 'User';
+    await Notification.create({
+      title: `New Ticket Created: #${ticket.ticketNumber}`,
+      message: `Ticket "${ticket.title}" (${ticket.priority.toUpperCase()} priority) created by ${creatorName}.`,
+      targetType: 'all',
+      createdBy: creatorUserId
+    });
+  } catch (notifErr) {
+    console.error('IN-APP TICKET NOTIFICATION CREATION ERROR:', notifErr.message);
+  }
+
   const ticketObj = ticket.toObject();
   if (ticketObj.attachments) ticketObj.attachments.forEach(a => delete a.data);
   if (ticketObj.supportingDocuments) ticketObj.supportingDocuments.forEach(a => delete a.data);
@@ -557,7 +572,8 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
     { path: 'assignmentHistory.assignedBy', select: 'name email role' },
     { path: 'assignmentHistory.assignedTo', select: 'name email role' },
     { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
-    { path: 'assignmentHistory.forwardedTo', select: 'name email role' }
+    { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
   ]);
 
   if (!ticket) {
@@ -832,7 +848,8 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
     { path: 'assignmentHistory.assignedBy', select: 'name email role' },
     { path: 'assignmentHistory.assignedTo', select: 'name email role' },
     { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
-    { path: 'assignmentHistory.forwardedTo', select: 'name email role' }
+    { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
   ]);
 };
 
@@ -997,7 +1014,8 @@ export const updateTicketStatusPatch = async (currentUser, id, { status, solutio
     { path: 'assignmentHistory.assignedBy', select: 'name email role' },
     { path: 'assignmentHistory.assignedTo', select: 'name email role' },
     { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
-    { path: 'assignmentHistory.forwardedTo', select: 'name email role' }
+    { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
   ]);
   if (!ticket) {
     throw new AppError('Ticket not found', 404);
@@ -1245,6 +1263,7 @@ export const assignTicket = async (currentUser, id, consultantId, remarks, ccCon
 
   ticket.assignedTo = targetConsultant._id;
   ticket.status = 'assigned';
+  ticket.openedBy = (ticket.openedBy || []).filter(id => id && String(id) !== String(targetConsultant._id));
   if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
   ticket.assignmentHistory.push({
     action: 'assign',
@@ -1265,7 +1284,8 @@ export const assignTicket = async (currentUser, id, consultantId, remarks, ccCon
     { path: 'assignmentHistory.assignedBy', select: 'name email role' },
     { path: 'assignmentHistory.assignedTo', select: 'name email role' },
     { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
-    { path: 'assignmentHistory.forwardedTo', select: 'name email role' }
+    { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
   ]);
 
   let manualCCEmails = [];
@@ -1322,6 +1342,7 @@ export const forwardTicket = async (currentUser, id, consultantId, remarks, ccCo
 
   ticket.assignedTo = targetConsultant._id;
   ticket.status = 'assigned';
+  ticket.openedBy = (ticket.openedBy || []).filter(id => id && String(id) !== String(targetConsultant._id));
   if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
   ticket.assignmentHistory.push({
     action: 'forward',
@@ -1344,7 +1365,8 @@ export const forwardTicket = async (currentUser, id, consultantId, remarks, ccCo
     { path: 'assignmentHistory.assignedBy', select: 'name email role' },
     { path: 'assignmentHistory.assignedTo', select: 'name email role' },
     { path: 'assignmentHistory.forwardedBy', select: 'name email role' },
-    { path: 'assignmentHistory.forwardedTo', select: 'name email role' }
+    { path: 'assignmentHistory.forwardedTo', select: 'name email role' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
   ]);
 
   let manualCCEmails = [];
