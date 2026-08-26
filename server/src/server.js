@@ -21,6 +21,9 @@ const ensureUploadsDir = async () => {
   }
 };
 
+// Keep a reference to the HTTP server for graceful shutdown
+let httpServer = null;
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 const startServer = async () => {
   try {
@@ -36,12 +39,17 @@ const startServer = async () => {
       logger.error(`Client initials migration failed: ${migErr.message}`);
     }
 
-    const server = app.listen(PORT, () => {
-      logger.info(chalk.green(`🚀 Server running on http://localhost:${PORT}`));
+    httpServer = app.listen(PORT, '0.0.0.0', () => {
+      logger.info(chalk.green(`🚀 Server running on http://0.0.0.0:${PORT}`));
     });
 
-    // Expose server reference so graceful shutdown can close it
-    return server;
+    // Handle listen errors (e.g. port already in use)
+    httpServer.on('error', (err) => {
+      logger.error(`❌ HTTP server error: ${err.message}`);
+      process.exit(1);
+    });
+
+    return httpServer;
   } catch (err) {
     logger.error(`❌ Startup failed: ${err.message}`, { stack: err.stack });
     process.exit(1);
@@ -49,10 +57,38 @@ const startServer = async () => {
 };
 
 // ── Graceful Shutdown ─────────────────────────────────────────────────────────
+// Easypanel / Docker sends SIGTERM when restarting or stopping a container.
+// We close the HTTP server first (stop accepting new connections), then close
+// the DB, then exit. A 10-second hard-kill timer ensures we never hang forever.
 const handleShutdown = async (signal) => {
   logger.info(`Received ${signal} — shutting down gracefully…`);
-  await closeDB();
-  process.exit(0);
+
+  // Hard-kill safety: if graceful shutdown takes > 10s, force exit
+  const killTimer = setTimeout(() => {
+    logger.error('Graceful shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 10_000);
+  killTimer.unref(); // Don't let this timer keep the process alive by itself
+
+  try {
+    // 1. Stop accepting new HTTP requests
+    if (httpServer) {
+      await new Promise((resolve, reject) => {
+        httpServer.close((err) => (err ? reject(err) : resolve()));
+      });
+      logger.info('HTTP server closed');
+    }
+
+    // 2. Close DB connection
+    await closeDB();
+    logger.info('Database connection closed');
+
+    clearTimeout(killTimer);
+    process.exit(0);
+  } catch (err) {
+    logger.error(`Error during shutdown: ${err.message}`);
+    process.exit(1);
+  }
 };
 
 process.on('SIGINT',  () => handleShutdown('SIGINT'));
@@ -77,3 +113,4 @@ process.on('uncaughtException', (err) => {
 });
 
 startServer();
+
