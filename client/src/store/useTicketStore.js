@@ -3,7 +3,8 @@ import api from '../api/mockAxios';
 
 const CACHE_TTL_MS = 30 * 1000; // 30 seconds
 
-const mapTicketFromApi = (t) => {
+export const mapTicketFromApi = (t) => {
+  if (!t) return null;
   // Normalize status to UI-facing values
   let mappedStatus;
   const rawStatus = t.status?.toLowerCase();
@@ -20,14 +21,14 @@ const mapTicketFromApi = (t) => {
 
   return {
     id: t._id || t.id,
-    // Use the server-assigned ticketNumber; never use Math.random() as a fallback
-    // (random values cause non-deterministic React keys and duplicate IDs)
     ticketNumber: t.ticketNumber || null,
     title: t.title,
     description: t.description,
     status: mappedStatus,
     priority: mappedPriority,
-    department: t.department?.name || t.department || 'Unassigned',
+    department: (typeof t.department === 'object' && t.department !== null)
+      ? (t.department.name || 'Unassigned')
+      : (t.department || 'Unassigned'),
     user: t.createdBy?.name || t.user || 'System',
     creatorId: t.createdBy?._id || null,
     clientId: t.createdBy?.client?._id || t.createdBy?.client || null,
@@ -36,9 +37,10 @@ const mapTicketFromApi = (t) => {
       if (c && typeof c === 'object' && c.name) return c.name;
       if (t.createdBy?.clientName) return t.createdBy.clientName;
       if (t.clientName) return t.clientName;
-      return null; // No client — show 'N/A' or nothing in the UI
+      return null;
     })(),
     assignee: (t.assignedTo && t.assignedTo.role !== 'superadmin' && t.assignedTo.name) ? t.assignedTo.name : null,
+    assignedConsultants: Array.isArray(t.assignedConsultants) ? t.assignedConsultants : [],
     createdAt: t.createdAt,
     original: t,
     remarks: t.remarks || [],
@@ -176,7 +178,7 @@ export const useTicketStore = create((set, get) => ({
         const response = await api.put(`/tickets/${id}`, payload, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        const updatedTicket = mapTicketFromApi(response.data);
+        const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
         set((state) => ({
           tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
         }));
@@ -196,7 +198,7 @@ export const useTicketStore = create((set, get) => ({
           payload.workLogs = newEntries.map(r => ({ date: r.date, hours: Number(r.hours) }));
         }
         const response = await api.put(`/tickets/${id}`, payload);
-        const updatedTicket = mapTicketFromApi(response.data);
+        const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
         set((state) => ({
           tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
         }));
@@ -210,7 +212,7 @@ export const useTicketStore = create((set, get) => ({
   assignTicket: async (id, adminId, remarks, ccConsultantIds = []) => {
     try {
       const response = await api.post(`/tickets/${id}/assign`, { adminId, remarks, ccConsultantIds });
-      const updatedTicket = mapTicketFromApi(response.data);
+      const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
       set((state) => ({
         tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
       }));
@@ -224,7 +226,7 @@ export const useTicketStore = create((set, get) => ({
   forwardTicket: async (id, adminId, remarks, ccConsultantIds = []) => {
     try {
       const response = await api.post(`/tickets/${id}/forward`, { adminId, remarks, ccConsultantIds });
-      const updatedTicket = mapTicketFromApi(response.data);
+      const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
       set((state) => ({
         tickets: state.tickets.map(t => t.id === id ? updatedTicket : t)
       }));
@@ -259,6 +261,34 @@ export const useTicketStore = create((set, get) => ({
     } catch (error) {
       console.error('Failed to mark ticket as opened:', error);
       return false;
+    }
+  },
+
+  updateWorkLog: async (ticketId, logId, data) => {
+    try {
+      const response = await api.put(`/tickets/${ticketId}/worklogs/${logId}`, data);
+      const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
+      set((state) => ({
+        tickets: state.tickets.map(t => t.id === ticketId ? updatedTicket : t)
+      }));
+      return updatedTicket;
+    } catch (error) {
+      console.error('Failed to update work log:', error);
+      throw error;
+    }
+  },
+
+  deleteWorkLog: async (ticketId, logId) => {
+    try {
+      const response = await api.delete(`/tickets/${ticketId}/worklogs/${logId}`);
+      const updatedTicket = mapTicketFromApi(response.data.ticket || response.data);
+      set((state) => ({
+        tickets: state.tickets.map(t => t.id === ticketId ? updatedTicket : t)
+      }));
+      return updatedTicket;
+    } catch (error) {
+      console.error('Failed to delete work log:', error);
+      throw error;
     }
   }
 }));

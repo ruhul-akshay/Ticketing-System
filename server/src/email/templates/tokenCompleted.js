@@ -1,6 +1,12 @@
-import { infoRow, detailTable, heroCard, ctaButton, signOff } from '../components.js';
+import { infoRow, detailTable, ctaButton, signOff } from '../components.js';
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
+
+/* ─────────────────────────────────────────────────────────────
+   TOKEN COMPLETED EMAIL
+   Sent to the token/request creator when their service request
+   is marked as completed.
+   ───────────────────────────────────────────────────────────── */
 
 export const sendTokenCompletedEmail = async (to, token) => {
   if (!to) return;
@@ -11,18 +17,22 @@ export const sendTokenCompletedEmail = async (to, token) => {
     ${detailTable([
       infoRow('Request No.', token.ticketNumber, true),
     ])}
-    ${ctaButton('⚙️  View Service Request', getClientUrl(), 'blue')}
+    ${/* FIX: was ctaButton('⚙️  View Service Request', getClientUrl(), 'blue') — url and text args were swapped */
+      ctaButton(getClientUrl(), '⚙️  View Service Request', 'blue')}
     ${signOff()}
   `;
 
   const html = emailWrapper(body);
 
-  await sendMail({
-    to,
-    subject: `Completed: Request ${token.ticketNumber}`,
-    html,
-    eventType: 'ticket_status_updated'
-  });
-
-  console.log(`✅ TOKEN COMPLETED EMAIL SENT TO: ${to}`);
+  try {
+    await sendMail({
+      to,
+      subject: `Completed: Request ${token.ticketNumber}`,
+      html,
+      eventType: 'ticket_status_updated',
+    });
+    console.log(`✅ TOKEN COMPLETED EMAIL SENT TO: ${to}`);
+  } catch (err) {
+    console.error('❌ TOKEN COMPLETED EMAIL FAILED:', err.message || err);
+  }
 };

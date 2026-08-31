@@ -223,8 +223,21 @@ export default function CreateTicketConsultantModal({ isOpen, onClose }) {
                      required
                      disabled={!formData.clientId || clientUsers.length === 0}
                    >
-                     <option value="">{clientUsers.length === 0 ? (formData.clientId ? 'Loading Users...' : 'Select Client First') : 'Select User Array'}</option>
-                     {clientUsers.map(u => <option key={u._id || u.id} value={u._id || u.id}>{u.name || u.email}</option>)}
+                     <option value="">{clientUsers.length === 0 ? (formData.clientId ? 'Loading Users...' : 'Select Client First') : 'Select User'}</option>
+                      {clientUsers.map(u => {
+                        let displayName = u.name || u.contactPerson || '';
+                        if (!displayName || displayName === u.email || (displayName.includes('@') && displayName.includes('.'))) {
+                          if (u.email && u.email.includes('@')) {
+                            displayName = u.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                          } else {
+                            displayName = u.email || 'Client User';
+                          }
+                        }
+                        const label = (u.email && u.email !== displayName) ? `${displayName} (${u.email})` : displayName;
+                        return (
+                          <option key={u._id || u.id} value={u._id || u.id}>{label}</option>
+                        );
+                      })}
                    </select>
                  </div>
                </div>

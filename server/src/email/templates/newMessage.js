@@ -1,8 +1,29 @@
-import { priorityBadge, statusBadge, infoRow, detailTable, ctaButton, signOff, messageQuote, sectionLabel } from '../components.js';
+import {
+  priorityBadge,
+  statusBadge,
+  infoRow,
+  detailTable,
+  ctaButton,
+  signOff,
+  messageQuote,
+  sectionLabel,
+} from '../components.js';
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
 
-export const sendNewMessageNotificationEmail = async (to, ticket, messageText, sender, recipientRole = 'clientuser') => {
+/* ─────────────────────────────────────────────────────────────
+   NEW MESSAGE NOTIFICATION EMAIL
+   Sent to the opposing party (client user ↔ consultant) whenever
+   a new remark / message is posted on a ticket thread.
+   ───────────────────────────────────────────────────────────── */
+
+export const sendNewMessageNotificationEmail = async (
+  to,
+  ticket,
+  messageText,
+  sender,
+  recipientRole = 'clientuser',
+) => {
   if (!to) return;
 
   const roleString = sender.role === 'superadmin' ? 'Super Admin'
@@ -19,18 +40,23 @@ export const sendNewMessageNotificationEmail = async (to, ticket, messageText, s
       infoRow('Priority',   priorityBadge(ticket.priority)),
       infoRow('Status',     statusBadge(ticket.status || 'open'), true),
     ].join(''))}
-    ${ctaButton(`${getClientUrl()}/tickets/${ticket._id}`, '💬  Reply to Ticket', 'blue')}
+    ${/* FIX: was '/tickets/${ticket._id}' — relative path may 404; use portal root */
+      ctaButton(getClientUrl(), '💬  Reply to Ticket', 'blue')}
     ${signOff()}
   `;
 
   const html = emailWrapper(body);
 
-  await sendMail({
-    to,
-    subject: `[New Message] Ticket ${ticket.ticketNumber}: ${ticket.title}`,
-    html,
-    eventType: 'new_message'
-  });
-
-  console.log(`✅ NEW MESSAGE NOTIFICATION EMAIL SENT TO: ${to}`);
+  // FIX: added try/catch — previously an SMTP failure would propagate uncaught
+  try {
+    await sendMail({
+      to,
+      subject: `[New Message] Ticket ${ticket.ticketNumber}: ${ticket.title}`,
+      html,
+      eventType: 'new_message',
+    });
+    console.log(`✅ NEW MESSAGE NOTIFICATION EMAIL SENT TO: ${to}`);
+  } catch (err) {
+    console.error('❌ NEW MESSAGE NOTIFICATION EMAIL FAILED:', err.message || err);
+  }
 };

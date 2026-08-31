@@ -163,28 +163,71 @@ export default function ConsultantKanbanBoard() {
     currentPage * ticketsPerPage
   );
 
-  // CSV Download Handler
-  const handleDownloadCSV = async () => {
+  // CSV Download Handler (Exports active filtered tickets)
+  const handleDownloadCSV = () => {
     setDownloading(true);
     try {
-      const response = await api.get('/tickets/export/csv', { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const ticketsToExport = sortedTickets;
+      let csvContent = '\uFEFF'; // Excel UTF-8 BOM
+
+      const escapeCSV = (str) => {
+        if (str === null || str === undefined) return '';
+        const stringified = String(str);
+        if (stringified.includes(',') || stringified.includes('"') || stringified.includes('\n') || stringified.includes('\r')) {
+          return `"${stringified.replace(/"/g, '""')}"`;
+        }
+        return stringified;
+      };
+
+      const headers = [
+        'Ticket Number',
+        'Title',
+        'Description',
+        'Client',
+        'Department',
+        'Category',
+        'Status',
+        'Priority',
+        'Reporter',
+        'Assigned To',
+        'Created Date',
+        'Work Logs (Hours)'
+      ];
+
+      csvContent += headers.map(escapeCSV).join(',') + '\r\n';
+
+      ticketsToExport.forEach(t => {
+        const orig = t.original || t;
+        const totalLogsHours = (orig.workLogs || t.workLogs || []).reduce((sum, log) => sum + (Number(log.hours) || 0), 0);
+        const row = [
+          t.ticketNumber || orig.ticketNumber || '',
+          t.title || '',
+          t.description || orig.description || '',
+          t.clientName || orig.createdBy?.clientName || orig.createdBy?.client?.name || '',
+          typeof t.department === 'string' ? t.department : (t.department?.name || orig.department?.name || ''),
+          t.category || orig.category || '',
+          t.status || '',
+          t.priority || '',
+          t.user || orig.createdBy?.name || '',
+          t.assignee || orig.assignedTo?.name || '',
+          t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+          totalLogsHours > 0 ? totalLogsHours.toFixed(1) : '0'
+        ];
+        csvContent += row.map(escapeCSV).join(',') + '\r\n';
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      const contentDisposition = response.headers['content-disposition'];
-      let filename = `assigned_tickets_${new Date().toISOString().split('T')[0]}.csv`;
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?([^"]+)"?/);
-        if (match && match[1]) filename = match[1];
-      }
-      link.setAttribute('download', filename);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `filtered_tickets_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
-      link.parentNode.removeChild(link);
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading tickets CSV:', error);
-      alert('Failed to download tickets CSV: ' + (error.response?.data?.message || error.message));
+      alert('Failed to download tickets CSV: ' + error.message);
     } finally {
       setDownloading(false);
     }

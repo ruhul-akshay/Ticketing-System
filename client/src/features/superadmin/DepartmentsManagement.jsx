@@ -147,11 +147,14 @@ export default function DepartmentsManagement() {
                     <td className="px-6 py-5 font-medium">{dept.description}</td>
                     <td className="px-6 py-5">
                       <div className="flex flex-wrap gap-2">
-                        {dept.categories?.map((cat) => (
-                          <span key={cat} className="px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase border border-white/10 bg-white/5 text-slate-300">
-                            {cat}
-                          </span>
-                        ))}
+                        {dept.categories?.map((cat, idx) => {
+                          const catLabel = typeof cat === 'object' ? (cat.name || cat.title || String(idx)) : cat;
+                          return (
+                            <span key={catLabel || idx} className="px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase border border-white/10 bg-white/5 text-slate-300">
+                              {catLabel}
+                            </span>
+                          );
+                        })}
                         {(!dept.categories || dept.categories.length === 0) && (
                           <span className="text-xs opacity-50">No categories</span>
                         )}
@@ -250,14 +253,17 @@ export default function DepartmentsManagement() {
                       </div>
                       
                       <div className="flex flex-wrap gap-2 mt-3 min-h-[40px] p-3 border border-white/5 rounded-xl bg-black/20">
-                        {formData.categories.map((cat) => (
-                          <span key={cat} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold tracking-wider uppercase border border-blue-500/30 bg-blue-500/10 text-blue-300">
-                            {cat}
-                            <button type="button" onClick={() => handleRemoveCategory(cat)} className="text-blue-300 hover:text-white rounded-full bg-white/5 hover:bg-white/20 p-0.5 ml-1 transition-colors">
-                              <X size={12} />
-                            </button>
-                          </span>
-                        ))}
+                        {formData.categories.map((cat, idx) => {
+                          const catLabel = typeof cat === 'object' ? (cat.name || cat.title || String(idx)) : cat;
+                          return (
+                            <span key={catLabel || idx} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold tracking-wider uppercase border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                              {catLabel}
+                              <button type="button" onClick={() => handleRemoveCategory(cat)} className="text-blue-300 hover:text-white rounded-full bg-white/5 hover:bg-white/20 p-0.5 ml-1 transition-colors">
+                                <X size={12} />
+                              </button>
+                            </span>
+                          );
+                        })}
                         {formData.categories.length === 0 && (
                           <span className="text-sm text-slate-500 italic py-1">No categories assigned yet.</span>
                         )}

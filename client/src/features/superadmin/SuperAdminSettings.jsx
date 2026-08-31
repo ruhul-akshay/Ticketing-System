@@ -38,6 +38,8 @@ export default function SuperAdminSettings() {
     description: ''
   });
 
+  const [companyShortNameInput, setCompanyShortNameInput] = useState(settings?.companyShortName || 'ASTPL');
+
   const isSuperAdmin = user?.role === 'Super Admin' || user?.role === 'superadmin';
 
   useEffect(() => {
@@ -47,6 +49,12 @@ export default function SuperAdminSettings() {
       fetchPriorities();
     }
   }, [fetchConfigs, fetchSettings, fetchPriorities, isSuperAdmin]);
+
+  useEffect(() => {
+    if (settings?.companyShortName) {
+      setCompanyShortNameInput(settings.companyShortName);
+    }
+  }, [settings?.companyShortName]);
 
   if (!isSuperAdmin) {
     return (
@@ -439,6 +447,38 @@ export default function SuperAdminSettings() {
               <ToggleLeft size={36} className="text-slate-600" />
             )}
           </button>
+        </div>
+
+        {/* Company Short Name Setting */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-6 bg-[#181f2b]/40 border border-white/5 rounded-2xl gap-4 mt-4">
+          <div className="space-y-1">
+            <span className="text-[14px] font-bold text-white block">Email Subject Company Prefix</span>
+            <span className="text-xs text-slate-500 block leading-relaxed max-w-xl font-medium">
+              Every outgoing email notification subject will be prefixed with this short name tag, e.g. <code className="text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">[{companyShortNameInput || 'ASTPL'}] Ticket #...</code>
+            </span>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="text"
+              value={companyShortNameInput}
+              onChange={(e) => setCompanyShortNameInput(e.target.value)}
+              placeholder="e.g. ASTPL"
+              className="bg-[#131924] border border-white/10 rounded-xl px-3 py-2 text-white text-xs font-bold focus:outline-none focus:border-blue-500/50 uppercase w-32"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const val = companyShortNameInput.trim().toUpperCase() || 'ASTPL';
+                const res = await updateSetting('companyShortName', val);
+                if (res?.success) {
+                  showToast(`Company Email Prefix set to "[${val}]"`);
+                }
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer whitespace-nowrap"
+            >
+              Save Prefix
+            </button>
+          </div>
         </div>
       </div>
 

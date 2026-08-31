@@ -149,6 +149,7 @@ const buildConsultantTicketQuery = (currentUser) => {
   const orClauses = [
     { createdBy: currentUser._id },
     { assignedTo: currentUser._id },
+    { assignedConsultants: currentUser._id },
     { 'assignmentHistory.assignedTo':  currentUser._id },
     { 'assignmentHistory.assignedBy':  currentUser._id },
     { 'assignmentHistory.forwardedBy': currentUser._id },
@@ -183,6 +184,7 @@ export const getTickets = async (currentUser) => {
     query.$or = [
       { createdBy: currentUser._id },
       { assignedTo: currentUser._id },
+      { assignedConsultants: currentUser._id },
       { 'assignmentHistory.assignedTo': currentUser._id },
       { 'assignmentHistory.assignedBy': currentUser._id },
       { 'assignmentHistory.forwardedBy': currentUser._id },
@@ -198,6 +200,7 @@ export const getTickets = async (currentUser) => {
     .populate([
       { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } },
       { path: 'assignedTo', select: 'name email role' },
+      { path: 'assignedConsultants', select: 'name email role' },
       { path: 'solvedBy', select: 'name email' },
       { path: 'department', select: 'name description categories' },
       { path: 'remarks.addedBy', select: 'name email role' },
@@ -224,7 +227,8 @@ export const getTickets = async (currentUser) => {
   });
 };
 
-export const exportTicketsCSV = async (currentUser) => {
+export const exportTicketsCSV = async (currentUser, filters = {}) => {
+  const { status, search, client, priority, department, dateFrom, dateTo } = filters;
   const query = {};
 
   if (currentUser.role === 'clientuser') {
@@ -240,6 +244,7 @@ export const exportTicketsCSV = async (currentUser) => {
     query.$or = [
       { createdBy: currentUser._id },
       { assignedTo: currentUser._id },
+      { assignedConsultants: currentUser._id },
       { 'assignmentHistory.assignedTo': currentUser._id },
       { 'assignmentHistory.assignedBy': currentUser._id },
       { 'assignmentHistory.forwardedBy': currentUser._id },
@@ -248,6 +253,42 @@ export const exportTicketsCSV = async (currentUser) => {
     ];
     if (currentUser.email) {
       query.$or.push({ ccEmails: currentUser.email });
+    }
+  }
+
+  if (status && status !== 'all') {
+    query.status = { $regex: new RegExp(`^${status}$`, 'i') };
+  }
+  if (priority && priority !== 'all') {
+    query.priority = priority.toLowerCase();
+  }
+  if (department && department !== 'all') {
+    query.department = department;
+  }
+  if (client && client !== 'all') {
+    query.client = client;
+  }
+  if (search) {
+    const searchRegex = new RegExp(search, 'i');
+    const searchCond = [
+      { ticketNumber: searchRegex },
+      { title: searchRegex },
+      { description: searchRegex }
+    ];
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, { $or: searchCond }];
+      delete query.$or;
+    } else {
+      query.$or = searchCond;
+    }
+  }
+  if (dateFrom || dateTo) {
+    query.createdAt = {};
+    if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const dTo = new Date(dateTo);
+      dTo.setHours(23, 59, 59, 999);
+      query.createdAt.$lte = dTo;
     }
   }
 
@@ -422,9 +463,21 @@ export const createTicket = async (currentUser, data, files = {}) => {
   let status = 'pending';
   let initialRemarks = 'Initially assigned to Super Admin on creation.';
 
+  let assignedConsultantsList = [];
+  if (Array.isArray(data.assignedConsultants)) {
+    assignedConsultantsList = data.assignedConsultants.filter(Boolean);
+  } else if (data.assignedConsultants) {
+    assignedConsultantsList = String(data.assignedConsultants).split(',').map(s => s.trim()).filter(Boolean);
+  }
+
   if (isInternal) {
-    if (data.assignedTo) {
+    if (assignedConsultantsList.length > 0) {
+      assignedTo = assignedConsultantsList[0];
+      status = 'assigned';
+      initialRemarks = `Internal ticket assigned to ${assignedConsultantsList.length} consultant(s).`;
+    } else if (data.assignedTo) {
       assignedTo = data.assignedTo;
+      assignedConsultantsList = [data.assignedTo];
       status = 'assigned';
       initialRemarks = 'Internal ticket assigned directly on creation.';
     } else {
@@ -434,12 +487,15 @@ export const createTicket = async (currentUser, data, files = {}) => {
     const isCcOnLeave = await checkConsultantOnLeave(matchedRule.assignedTo);
     if (!isCcOnLeave) {
       assignedTo = matchedRule.assignedTo;
+      assignedConsultantsList = [matchedRule.assignedTo];
       status = 'assigned';
       initialRemarks = `Pre-assigned automatically by rule: ${matchedRule.name}`;
     } else {
       const skippedCc = await ClientUser.findById(matchedRule.assignedTo, 'name');
       initialRemarks = `Pre-assignment rule '${matchedRule.name}' matched, but consultant ${skippedCc?.name || ''} is currently on approved leave. Re-routed to Super Admin.`;
     }
+  } else if (assignedTo) {
+    assignedConsultantsList = [assignedTo];
   }
 
   const assignmentHistory = assignedTo ? [{
@@ -464,6 +520,7 @@ export const createTicket = async (currentUser, data, files = {}) => {
     createdBy: creatorUserId,
     status,
     assignedTo,
+    assignedConsultants: assignedConsultantsList,
     assignmentHistory,
     ccEmails: Array.isArray(ccEmails) 
       ? ccEmails.map(e => e.split(',')).flat().map(e => e.trim()).filter(Boolean) 
@@ -478,6 +535,7 @@ export const createTicket = async (currentUser, data, files = {}) => {
   await ticket.populate([
     { path: 'createdBy', populate: { path: 'client' } },
     { path: 'assignedTo' },
+    { path: 'assignedConsultants', select: 'name email role' },
     { path: 'department' }
   ]);
 
@@ -537,19 +595,6 @@ export const createTicket = async (currentUser, data, files = {}) => {
   } else {
     sendConsultantTicketAlertEmail(ticket)
       .catch(err => console.error('CONSULTANT EMAIL ERROR:', err.message));
-  }
-
-  // Create in-app notification document so all users receive the new ticket notification in navbar bell
-  try {
-    const creatorName = creatorUser?.name || 'User';
-    await Notification.create({
-      title: `New Ticket Created: #${ticket.ticketNumber}`,
-      message: `Ticket "${ticket.title}" (${ticket.priority.toUpperCase()} priority) created by ${creatorName}.`,
-      targetType: 'all',
-      createdBy: creatorUserId
-    });
-  } catch (notifErr) {
-    console.error('IN-APP TICKET NOTIFICATION CREATION ERROR:', notifErr.message);
   }
 
   const ticketObj = ticket.toObject();
@@ -1587,4 +1632,103 @@ export const deleteAttachmentFromTicket = async (currentUser, ticketId, attachme
 
   targetArray.pull(attachmentId);
   await ticket.save();
+};
+
+export const updateWorkLog = async (ticketId, logId, data, currentUser) => {
+  const ticket = await Ticket.findById(ticketId);
+  if (!ticket) {
+    throw new AppError('Ticket not found', 404);
+  }
+
+  if (!ticket.workLogs) ticket.workLogs = [];
+
+  const logIndex = ticket.workLogs.findIndex((l, idx) =>
+    String(l._id) === String(logId) || String(l.id) === String(logId) || String(idx) === String(logId)
+  );
+
+  if (logIndex === -1) {
+    throw new AppError('Work log entry not found', 404);
+  }
+
+  const targetLog = ticket.workLogs[logIndex];
+
+  const logAddedById = String(targetLog.addedBy?._id || targetLog.addedBy || '');
+  const currentUserId = String(currentUser._id || currentUser.id || '');
+  const isSuperOrAdmin = currentUser.role === 'superadmin' || currentUser.role === 'admin';
+
+  if (!isSuperOrAdmin && logAddedById !== currentUserId) {
+    throw new AppError('You can only edit work log entries entered by yourself.', 400);
+  }
+
+  if (data.date) {
+    targetLog.date = new Date(data.date);
+  }
+  if (data.hours !== undefined && data.hours !== null) {
+    const parsedHours = Number(data.hours);
+    if (isNaN(parsedHours) || parsedHours < 0) {
+      throw new AppError('Hours must be a valid non-negative number', 400);
+    }
+    targetLog.hours = parsedHours;
+  }
+
+  if (ticket.status === 'resolved' && ticket.workLogs.length > 0) {
+    const totalHours = ticket.workLogs.reduce((acc, l) => acc + (l.hours || 0), 0);
+    ticket.timeToSolve = totalHours * 3600000;
+  }
+
+  await ticket.save();
+
+  return await Ticket.findById(ticket._id).populate([
+    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } },
+    { path: 'assignedTo', select: 'name email role' },
+    { path: 'department', select: 'name' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
+  ]);
+};
+
+export const deleteWorkLog = async (ticketId, logId, currentUser) => {
+  const ticket = await Ticket.findById(ticketId);
+  if (!ticket) {
+    throw new AppError('Ticket not found', 404);
+  }
+
+  if (!ticket.workLogs) ticket.workLogs = [];
+
+  const logIndex = ticket.workLogs.findIndex((l, idx) =>
+    String(l._id) === String(logId) || String(l.id) === String(logId) || String(idx) === String(logId)
+  );
+
+  if (logIndex === -1) {
+    throw new AppError('Work log entry not found', 404);
+  }
+
+  const targetLog = ticket.workLogs[logIndex];
+
+  const logAddedById = String(targetLog.addedBy?._id || targetLog.addedBy || '');
+  const currentUserId = String(currentUser._id || currentUser.id || '');
+  const isSuperOrAdmin = currentUser.role === 'superadmin' || currentUser.role === 'admin';
+
+  if (!isSuperOrAdmin && logAddedById !== currentUserId) {
+    throw new AppError('You can only delete work log entries entered by yourself.', 400);
+  }
+
+  ticket.workLogs.splice(logIndex, 1);
+
+  if (ticket.status === 'resolved') {
+    if (ticket.workLogs.length > 0) {
+      const totalHours = ticket.workLogs.reduce((acc, l) => acc + (l.hours || 0), 0);
+      ticket.timeToSolve = totalHours * 3600000;
+    } else {
+      ticket.timeToSolve = 0;
+    }
+  }
+
+  await ticket.save();
+
+  return await Ticket.findById(ticket._id).populate([
+    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } },
+    { path: 'assignedTo', select: 'name email role' },
+    { path: 'department', select: 'name' },
+    { path: 'workLogs.addedBy', select: 'name email role' }
+  ]);
 };

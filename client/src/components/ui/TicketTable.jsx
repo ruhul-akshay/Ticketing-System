@@ -121,7 +121,7 @@ export default function TicketTable({
                         {ticket.clientName || 'Internal'}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate">
-                        {ticket.department || 'General'}
+                        {typeof ticket.department === 'object' ? (ticket.department?.name || 'General') : (ticket.department || 'General')}
                       </p>
                     </div>
                   </td>

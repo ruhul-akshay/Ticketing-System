@@ -50,7 +50,7 @@ const clientSchema = new mongoose.Schema({
     sapSupportAMC: {
       status: {
         type: String,
-        enum: ['Active', 'Suspended', null],
+        enum: ['Active', 'Suspended', 'Task Basis', null],
         default: null
       },
       fromDate: {
@@ -62,7 +62,7 @@ const clientSchema = new mongoose.Schema({
     },
     sapSupportAMCType: {
       type: String,
-      enum: ['Limited', 'Unlimited', null],
+      enum: ['Limited', 'Unlimited', 'Task Basis', null],
       default: null
     },
     sapSupportHourlyCap: {

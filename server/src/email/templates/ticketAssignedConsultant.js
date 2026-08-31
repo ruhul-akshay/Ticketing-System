@@ -1,4 +1,13 @@
-import { priorityBadge, statusBadge, infoRow, detailTable, descriptionBlock, heroCard, ctaButton, signOff } from '../components.js';
+import {
+  priorityBadge,
+  statusBadge,
+  infoRow,
+  detailTable,
+  descriptionBlock,
+  heroCard,
+  ctaButton,
+  signOff,
+} from '../components.js';
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
 
@@ -76,24 +85,25 @@ export const sendTicketAssignedConsultantEmail = async (
 
     ${descriptionBlock('Issue Description', ticket.description)}
 
-    ${ctaButton(
-      `${getClientUrl()}/consultant/tickets/${ticket._id || ticket.ticketNumber}`,
-      '🔧  Open in Consultant Panel',
-      'red',
-    )}
+    ${/* FIX: was '/consultant/tickets/${ticket._id}' — route may 404; use portal root */
+      ctaButton(getClientUrl(), '🔧  Open in Consultant Panel', 'red')}
 
     ${signOff('Akshay Support System', 'Akshay Software Technologies Pvt. Ltd.')}
   `;
 
   const html = emailWrapper(body);
 
-  await sendMail({
-    to,
-    cc,
-    subject : `🚨 Assigned Ticket [${ticket.ticketNumber}] — Assigned to You | ${ticket.title}`,
-    html,
-    eventType: 'ticket_assigned'
-  });
-
-  console.log(`✅ TICKET ASSIGNED (CONSULTANT) EMAIL SENT TO: ${to}`);
+  // FIX: added try/catch — previously an SMTP failure would propagate uncaught
+  try {
+    await sendMail({
+      to,
+      cc,
+      subject  : `🚨 Assigned Ticket [${ticket.ticketNumber}] — Assigned to You | ${ticket.title}`,
+      html,
+      eventType: 'ticket_assigned',
+    });
+    console.log(`✅ TICKET ASSIGNED (CONSULTANT) EMAIL SENT TO: ${to}`);
+  } catch (err) {
+    console.error('❌ TICKET ASSIGNED EMAIL FAILED:', err.message || err);
+  }
 };

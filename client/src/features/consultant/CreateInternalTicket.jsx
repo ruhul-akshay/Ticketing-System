@@ -50,6 +50,7 @@ export default function CreateInternalTicket() {
   
   // Internal ticket specific states
   const [assignedTo, setAssignedTo] = useState('');
+  const [assignedConsultants, setAssignedConsultants] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
   const [clientUsers, setClientUsers] = useState([]);
   const [selectedClientUser, setSelectedClientUser] = useState('');
@@ -150,8 +151,9 @@ export default function CreateInternalTicket() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title || !description || !department || !assignedTo) {
-      setError('Please fill in all required fields (Title, Description, Department, and Assignee).');
+    const effectiveAssignees = assignedConsultants.length > 0 ? assignedConsultants : (assignedTo ? [assignedTo] : []);
+    if (!title || !description || !department || effectiveAssignees.length === 0) {
+      setError('Please fill in all required fields (Title, Description, Department, and at least one Assigned Consultant).');
       return;
     }
 
@@ -178,7 +180,10 @@ export default function CreateInternalTicket() {
     
     // Internal Ticket details
     formData.append('isInternal', 'true');
-    formData.append('assignedTo', assignedTo);
+    formData.append('assignedTo', effectiveAssignees[0]);
+    effectiveAssignees.forEach(id => {
+      formData.append('assignedConsultants', id);
+    });
     if (selectedClient) formData.append('client', selectedClient);
     if (selectedClientUser) formData.append('clientUser', selectedClientUser);
     formData.append('isVisibleToClient', isVisibleToClient ? 'true' : 'false');
@@ -349,12 +354,12 @@ export default function CreateInternalTicket() {
           {/* Assignment & Routing Parameters */}
           <div className="bg-[#111620]/80 backdrop-blur-xl border border-white/5 p-6 rounded-3xl shadow-2xl space-y-6">
             <h3 className="text-md font-bold text-white border-b border-white/5 pb-3">Routing & Target</h3>
-
-            {/* Assignee Selection (Consultant) */}
+            
+            {/* Assignee Selection (Multiple Consultants Support) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block">
-                  Assign to Consultant <span className="text-red-500">*</span>
+                  Assign to Consultant(s) <span className="text-red-500">*</span>
                 </label>
                 {(dataLoading || consultantsLoading) && (
                   <Loader2 size={13} className="text-blue-400 animate-spin" />
@@ -368,20 +373,54 @@ export default function CreateInternalTicket() {
               <div className="relative">
                 <Users size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
                 <select
-                  value={assignedTo}
-                  onChange={(e) => setAssignedTo(e.target.value)}
+                  value=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && !assignedConsultants.includes(val)) {
+                      const updated = [...assignedConsultants, val];
+                      setAssignedConsultants(updated);
+                      if (!assignedTo) setAssignedTo(val);
+                    }
+                  }}
                   className="w-full bg-[#181f2b] border border-white/5 hover:border-white/10 focus:border-blue-500/40 rounded-2xl py-3.5 pl-11 pr-4 text-[13px] text-white focus:outline-none appearance-none cursor-pointer disabled:opacity-60"
-                  required
                   disabled={dataLoading || consultantsLoading}
                 >
-                  <option value="" disabled>
-                    {(dataLoading || consultantsLoading) ? 'Loading consultants...' : consultants.length === 0 ? 'No consultants found' : '-- Select Consultant --'}
+                  <option value="">
+                    {(dataLoading || consultantsLoading) ? 'Loading consultants...' : consultants.length === 0 ? 'No consultants found' : '+ Select / Add Consultant'}
                   </option>
-                  {consultants.map(c => (
-                    <option key={c._id} value={c._id}>{c.name} ({c.email})</option>
-                  ))}
+                  {consultants
+                    .filter(c => !assignedConsultants.includes(c._id))
+                    .map(c => (
+                      <option key={c._id} value={c._id}>{c.name} ({c.email})</option>
+                    ))
+                  }
                 </select>
               </div>
+
+              {/* Selected Consultant Badges */}
+              {assignedConsultants.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {assignedConsultants.map(id => {
+                    const consultantObj = consultants.find(c => (c._id === id || c.id === id));
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold shadow-sm">
+                        <Users size={12} /> {consultantObj?.name || 'Consultant'}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = assignedConsultants.filter(cId => cId !== id);
+                            setAssignedConsultants(updated);
+                            if (assignedTo === id) setAssignedTo(updated[0] || '');
+                          }}
+                          className="text-blue-400 hover:text-white rounded-full bg-white/5 hover:bg-white/20 p-0.5 ml-0.5 transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Department Input */}
@@ -499,9 +538,20 @@ export default function CreateInternalTicket() {
                 disabled={!selectedClient}
               >
                 <option value="">-- None --</option>
-                {clientUsers.map(u => (
-                  <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                ))}
+                {clientUsers.map(u => {
+                  let displayName = u.name || u.contactPerson || '';
+                  if (!displayName || displayName === u.email || (displayName.includes('@') && displayName.includes('.'))) {
+                    if (u.email && u.email.includes('@')) {
+                      displayName = u.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    } else {
+                      displayName = u.email || 'Client User';
+                    }
+                  }
+                  const label = (u.email && u.email !== displayName) ? `${displayName} (${u.email})` : displayName;
+                  return (
+                    <option key={u._id || u.id} value={u._id || u.id}>{label}</option>
+                  );
+                })}
               </select>
             </div>
 

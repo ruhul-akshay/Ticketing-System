@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Settings, Activity, Tag, Lock, Send, MessageSquare, Wrench } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import api from '../../api/mockAxios';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useTicketStore } from '../../store/useTicketStore';
+import { useTicketStore, mapTicketFromApi } from '../../store/useTicketStore';
 import { useConsultantStore } from '../../store/useConsultantStore';
 import { formatHoursToHM } from '../../utils/formatters';
 
@@ -41,7 +42,7 @@ export default function ConsultantTicketDetailPanel({
     return found || raw;
   });
 
-  const { fetchTickets, forwardTicket } = useTicketStore();
+  const { fetchTickets, forwardTicket, updateWorkLog, deleteWorkLog } = useTicketStore();
   const { consultants: admins, fetchConsultants: fetchAdmins, isLoading: adminsLoading } =
     useConsultantStore();
 
@@ -272,33 +273,101 @@ export default function ConsultantTicketDetailPanel({
       return alert('Please enter effort hours before saving.');
     }
     setIsSavingEffort(true);
+
+    // Prepare optimistic logs to update UI immediately
+    const newLogsToAdd = validEntries.map((r) => {
+      const hrs = Number(r.hours || 0) + Number(r.minutes || 0) / 60;
+      return {
+        date: r.date,
+        hours: hrs,
+        addedBy: {
+          _id: user?._id || user?.id,
+          name: user?.name,
+          email: user?.email,
+          role: user?.role
+        }
+      };
+    });
+
+    // 1. Instant local store update for 0 delay
+    useTicketStore.setState((state) => ({
+      tickets: state.tickets.map((t) =>
+        t.id === rawTicketId
+          ? { ...t, workLogs: [...(t.workLogs || []), ...newLogsToAdd] }
+          : t
+      )
+    }));
+
+    // Reset input entries immediately
+    setWorkLogEntries([
+      { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
+    ]);
+
     try {
-      const token = sessionStorage.getItem('token');
-      const baseUrl =
-        import.meta.env.VITE_API_URL || 'https://ticketing-backend-61yr.onrender.com/api';
-      const response = await fetch(`${baseUrl}/tickets/${rawTicketId}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ workLogs: validEntries })
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || 'Failed to save effort hours.');
+      // 2. Background sync with backend
+      const response = await api.put(`/tickets/${rawTicketId}`, { workLogs: validEntries });
+      const rawUpdated = response.data?.ticket || response.data;
+      if (rawUpdated) {
+        const mapped = mapTicketFromApi(rawUpdated);
+        useTicketStore.setState((state) => ({
+          tickets: state.tickets.map((t) => (t.id === rawTicketId ? mapped : t))
+        }));
       }
-
-      alert('Effort hours saved successfully!');
-      setWorkLogEntries([
-        { date: new Date().toISOString().slice(0, 10), hours: '', minutes: '' }
-      ]);
-      await fetchTickets();
     } catch (err) {
-      alert(err.message || 'Error saving work logs');
+      alert(err.response?.data?.message || err.message || 'Error saving work logs');
+      await fetchTickets({ force: true });
     } finally {
       setIsSavingEffort(false);
+    }
+  };
+
+  const handleUpdateExistingWorkLog = async (logId, data) => {
+    // Instant local store update for 0 delay
+    useTicketStore.setState((state) => ({
+      tickets: state.tickets.map((t) => {
+        if (t.id !== rawTicketId) return t;
+        const updatedLogs = (t.workLogs || []).map((l, idx) => {
+          if (String(l._id) === String(logId) || String(l.id) === String(logId) || String(idx) === String(logId)) {
+            return {
+              ...l,
+              date: data.date ? data.date : l.date,
+              hours: data.hours !== undefined ? data.hours : l.hours
+            };
+          }
+          return l;
+        });
+        return { ...t, workLogs: updatedLogs };
+      })
+    }));
+
+    try {
+      await updateWorkLog(rawTicketId, logId, data);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to update work log entry.');
+      await fetchTickets({ force: true });
+    }
+  };
+
+  const handleDeleteExistingWorkLog = async (logId) => {
+    // Instant local store update for 0 delay
+    useTicketStore.setState((state) => ({
+      tickets: state.tickets.map((t) => {
+        if (t.id !== rawTicketId) return t;
+        const updatedLogs = (t.workLogs || []).filter(
+          (l, idx) =>
+            String(l._id) !== String(logId) &&
+            String(l.id) !== String(logId) &&
+            String(idx) !== String(logId)
+        );
+        return { ...t, workLogs: updatedLogs };
+      })
+    }));
+
+    try {
+      await deleteWorkLog(rawTicketId, logId);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to delete work log entry.');
+      await fetchTickets({ force: true });
     }
   };
 
@@ -654,6 +723,8 @@ ${(ticket.original?.assignmentHistory || [])
               onUpdateRow={updateWorkLogRow}
               onSaveWorkLogsOnly={handleSaveWorkLogsOnly}
               isSaving={isSavingEffort}
+              onUpdateExistingWorkLog={handleUpdateExistingWorkLog}
+              onDeleteExistingWorkLog={handleDeleteExistingWorkLog}
             />
 
             {/* Technical Resolution Section */}

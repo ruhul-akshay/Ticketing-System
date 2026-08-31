@@ -13,7 +13,11 @@ export default function NavbarNotifications({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  const safeNotifications = Array.isArray(notifications) ? notifications : [];
+  // Filter out ticket creation notifications so they only appear in New Ticket Notifications (NavbarAlerts)
+  const safeNotifications = (Array.isArray(notifications) ? notifications : []).filter((n) => {
+    const title = (n.title || '').toLowerCase();
+    return !title.startsWith('new ticket created') && !title.includes('ticket created:');
+  });
   const unreadCount = safeNotifications.filter((n) => !n.read).length;
 
   useEffect(() => {

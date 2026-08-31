@@ -7,7 +7,7 @@ export const getTickets = asyncHandler(async (req, res) => {
 });
 
 export const exportCSV = asyncHandler(async (req, res) => {
-  const csvContent = await ticketService.exportTicketsCSV(req.user);
+  const csvContent = await ticketService.exportTicketsCSV(req.user, req.query);
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename=tickets_${new Date().toISOString().split('T')[0]}.csv`);
   res.send(csvContent);
@@ -146,3 +146,13 @@ export const testTicketRoute = (req, res) => {
     user: req.user
   });
 };
+
+export const updateWorkLog = asyncHandler(async (req, res) => {
+  const ticket = await ticketService.updateWorkLog(req.params.id, req.params.logId, req.body, req.user);
+  res.json({ message: 'Work log updated successfully', ticket });
+});
+
+export const deleteWorkLog = asyncHandler(async (req, res) => {
+  const ticket = await ticketService.deleteWorkLog(req.params.id, req.params.logId, req.user);
+  res.json({ message: 'Work log deleted successfully', ticket });
+});

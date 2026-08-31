@@ -18,9 +18,25 @@ import {
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
 
-/* ── Helper ──────────────────────────────────────────────────── */
+/* ── Public export ───────────────────────────────────────────── */
 
-const buildHtml = (ticket, formattedDate) => {
+/**
+ * Send a "Ticket Resolved" notification email.
+ *
+ * @param {string} to      Recipient e-mail address.
+ * @param {object} ticket  Mongoose ticket document (plain or lean).
+ */
+export const sendTicketResolvedEmail = async (to, ticket) => {
+  if (!to) return;
+
+  const resolvedAt    = new Date(ticket.solvedAt || ticket.actualResolutionDate || Date.now());
+  const formattedDate = resolvedAt.toLocaleDateString('en-GB', {
+    day   : '2-digit',
+    month : 'long',
+    year  : 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+
   const resolvedBy = ticket.solvedBy?.name || 'Support Team';
   const reviewUrl  = getClientUrl() + '/reviews';
 
@@ -51,8 +67,8 @@ const buildHtml = (ticket, formattedDate) => {
   /* ── Success notice ─────────────────────────────────────────*/
   const notice = alertBox(
     'success',
-    "Thank you for your patience. We hope your issue has been fully resolved. " +
-    "Please don\u2019t hesitate to raise a new ticket if you need further assistance.",
+    'Thank you for your patience. We hope your issue has been fully resolved. ' +
+    'Please don\u2019t hesitate to raise a new ticket if you need further assistance.',
   );
 
   /* ── Rating CTA button ──────────────────────────────────────*/
@@ -61,7 +77,7 @@ const buildHtml = (ticket, formattedDate) => {
   /* ── Inline "View Ticket Details" link ──────────────────────*/
   const viewLink = `<p style="margin:-16px 0 24px 0;"><a href="${getClientUrl()}" target="_blank" style="font-size:13px;font-weight:600;color:#2563eb;text-decoration:none;">View Ticket Details &rarr;</a></p>`;
 
-  return emailWrapper(
+  const html = emailWrapper(
     hero       +
     table      +
     resolution +
@@ -70,29 +86,14 @@ const buildHtml = (ticket, formattedDate) => {
     viewLink   +
     signOff(),
   );
-};
-
-/* ── Public export ───────────────────────────────────────────── */
-
-/**
- * Send a "Ticket Resolved" notification email.
- *
- * @param {string} to      Recipient e-mail address.
- * @param {object} ticket  Mongoose ticket document (plain or lean).
- */
-export const sendTicketResolvedEmail = async (to, ticket) => {
-  if (!to) return;
-
-  const resolvedAt    = new Date(ticket.solvedAt || ticket.actualResolutionDate || Date.now());
-  const formattedDate = resolvedAt.toLocaleDateString('en-GB', {
-    day   : '2-digit',
-    month : 'long',
-    year  : 'numeric',
-    timeZone: 'Asia/Kolkata'
-  });
 
   const subject = `[Resolved] Ticket ${ticket.ticketNumber}: ${ticket.title}`;
-  const html    = buildHtml(ticket, formattedDate);
 
-  await sendMail({ to, subject, html, eventType: 'ticket_closed' });
+  // FIX: added try/catch — previously an SMTP failure would propagate uncaught
+  try {
+    await sendMail({ to, subject, html, eventType: 'ticket_closed' });
+    console.log(`✅ TICKET RESOLVED EMAIL SENT TO: ${to}`);
+  } catch (err) {
+    console.error('❌ TICKET RESOLVED EMAIL FAILED:', err.message || err);
+  }
 };

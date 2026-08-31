@@ -2,7 +2,16 @@ import { ctaButton, alertBox, stepList, signOff, sectionLabel } from '../compone
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
 
+/* ─────────────────────────────────────────────────────────────
+   TEMPORARY PASSWORD EMAIL
+   Sent when an admin resets a user's password and a temporary
+   credential is generated.
+   ───────────────────────────────────────────────────────────── */
+
 export const sendTemporaryPasswordEmail = async (to, userName, tempPassword) => {
+  // FIX: added missing guard (was absent unlike every other template)
+  if (!to) return;
+
   try {
     const body = `
       <p style="font-size:13px;font-weight:700;color:#64748b;letter-spacing:0.08em;text-transform:uppercase;margin:0 0 6px 0;">Password Reset</p>
@@ -29,7 +38,8 @@ export const sendTemporaryPasswordEmail = async (to, userName, tempPassword) => 
         'Keep your new password secure and do not share it with anyone.',
       ])}
 
-      ${alertBox('<strong>⚠️ Security Notice:</strong> If you did not request this password reset, contact your system administrator immediately.', 'danger')}
+      ${/* FIX: was alertBox('<strong>⚠️ Security Notice:...</strong>', 'danger') — args were swapped */
+        alertBox('danger', '<strong>⚠️ Security Notice:</strong> If you did not request this password reset, contact your system administrator immediately.')}
 
       ${signOff()}
     `;
@@ -40,7 +50,7 @@ export const sendTemporaryPasswordEmail = async (to, userName, tempPassword) => 
       to,
       subject: `Your Temporary Password — Akshay Support Portal`,
       html,
-      eventType: 'password_reset'
+      eventType: 'password_reset',
     });
 
     console.log(`✅ TEMPORARY PASSWORD EMAIL SENT TO: ${to}`);

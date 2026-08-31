@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, Plus, Trash2, User, Clock, Calendar, CheckCircle2 } from 'lucide-react';
+import { Activity, Plus, Trash2, User, Clock, Calendar, CheckCircle2, Pencil, Check, X } from 'lucide-react';
 import { formatHoursToHM, formatDateOnly } from '../../../utils/formatters';
 
 // Helper to resolve consultant details from work log entry
@@ -89,10 +89,37 @@ export default function TicketWorkLogsSection({
   onRemoveRow,
   onUpdateRow,
   onSaveWorkLogsOnly,
-  isSaving = false
+  isSaving = false,
+  onUpdateExistingWorkLog,
+  onDeleteExistingWorkLog
 }) {
   const isResolved = ticket?.status === 'Resolved';
   const existingWorkLogs = ticket?.workLogs || ticket?.original?.workLogs || [];
+
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [editHours, setEditHours] = useState('');
+  const [editMinutes, setEditMinutes] = useState('');
+
+  const handleStartEdit = (log, logKey) => {
+    setEditingLogId(logKey);
+    const dStr = log.date ? new Date(log.date).toISOString().slice(0, 10) : '';
+    setEditDate(dStr);
+    const totalMins = Math.round((log.hours || 0) * 60);
+    setEditHours(Math.floor(totalMins / 60).toString());
+    setEditMinutes((totalMins % 60).toString());
+  };
+
+  const handleSaveEdit = async (logKey) => {
+    if (!onUpdateExistingWorkLog) return;
+    const totalHours = Number(editHours || 0) + (Number(editMinutes || 0) / 60);
+    if (totalHours < 0) {
+      alert('Hours cannot be negative.');
+      return;
+    }
+    await onUpdateExistingWorkLog(logKey, { date: editDate, hours: totalHours });
+    setEditingLogId(null);
+  };
 
   // Group logged work hours by consultant
   const memberEfforts = useMemo(() => {
@@ -214,9 +241,75 @@ export default function TicketWorkLogsSection({
           <div className="max-h-48 overflow-y-auto space-y-2 custom-scrollbar pr-1">
             {existingWorkLogs.map((log, lIdx) => {
               const consultant = resolveConsultantInfo(log.addedBy, ticket, consultants, currentUser);
+              const logKey = log._id || log.id || lIdx;
+              const isEditing = editingLogId === logKey;
+
+              const logUserId = String(log.addedBy?._id || log.addedBy?.id || log.addedBy || '');
+              const currentUserId = String(currentUser?._id || currentUser?.id || '');
+              const isOwnLog =
+                (currentUserId && logUserId && currentUserId === logUserId) ||
+                (currentUser?.name && consultant.name === currentUser.name) ||
+                currentUser?.role === 'superadmin' ||
+                currentUser?.role === 'admin';
+
+              if (isEditing) {
+                return (
+                  <div
+                    key={logKey}
+                    className="flex flex-wrap items-center gap-2 p-2.5 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs"
+                  >
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                      className="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 dark:text-white"
+                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Hrs"
+                        value={editHours}
+                        onChange={(e) => setEditHours(e.target.value)}
+                        className="w-14 bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs font-bold text-right text-slate-800 dark:text-white"
+                      />
+                      <span className="text-[10px] text-slate-400 font-bold">hrs</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        placeholder="Mins"
+                        value={editMinutes}
+                        onChange={(e) => setEditMinutes(e.target.value)}
+                        className="w-14 bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs font-bold text-right text-slate-800 dark:text-white"
+                      />
+                      <span className="text-[10px] text-slate-400 font-bold">mins</span>
+                    </div>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(logKey)}
+                        className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all cursor-pointer"
+                        title="Save changes"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingLogId(null)}
+                        className="p-1.5 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
+                        title="Cancel"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
-                  key={log._id || lIdx}
+                  key={logKey}
                   className="flex items-center justify-between p-2.5 bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 rounded-xl text-xs"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -229,10 +322,34 @@ export default function TicketWorkLogsSection({
                       {consultant.name}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md text-[11px] tabular-nums">
                       {formatHoursToHM(log.hours)}
                     </span>
+                    {isOwnLog && (
+                      <div className="flex items-center gap-1 pl-1 border-l border-slate-200 dark:border-white/10">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(log, logKey)}
+                          className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-all cursor-pointer"
+                          title="Edit your time entry"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete this work log entry of ${formatHoursToHM(log.hours)}?`)) {
+                              onDeleteExistingWorkLog && onDeleteExistingWorkLog(logKey);
+                            }
+                          }}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-all cursor-pointer"
+                          title="Delete your time entry"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

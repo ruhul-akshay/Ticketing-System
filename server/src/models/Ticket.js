@@ -72,6 +72,11 @@ const ticketSchema = new mongoose.Schema({
     ref: 'ClientUser'
   },
 
+  assignedConsultants: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClientUser'
+  }],
+
   department: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Department'

@@ -49,9 +49,9 @@ export default function TicketContextCards({ ticket, status }) {
         <div>
           <p
             className="text-sm sm:text-base font-bold text-slate-800 dark:text-white truncate"
-            title={ticket.department || 'General'}
+            title={typeof ticket.department === 'object' ? (ticket.department?.name || 'General') : (ticket.department || 'General')}
           >
-            {ticket.department || 'General'}
+            {typeof ticket.department === 'object' ? (ticket.department?.name || 'General') : (ticket.department || 'General')}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
             {ticket.original?.category || 'General Category'}

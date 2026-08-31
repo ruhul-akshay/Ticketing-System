@@ -31,8 +31,8 @@ export default function ClientsManagement() {
   const erpOptions = ['SAP B1', 'CREST', 'SFA'];
   const sapVersionOptions = ['HANA', 'SQL'];
   const licenseAMCOptions = ['Active', 'Terminated'];
-  const supportAMCOptions = ['Active', 'Suspended'];
-  const supportAMCTypeOptions = ['Limited', 'Unlimited'];
+  const supportAMCOptions = ['Active', 'Suspended', 'Task Basis'];
+  const supportAMCTypeOptions = ['Limited', 'Unlimited', 'Task Basis'];
   const incidentTypeOptions = ['Functional / Transactional', 'Technical / Connection', 'Add-Ons'];
 
   const loadData = useCallback(() => {
@@ -423,20 +423,36 @@ export default function ClientsManagement() {
                              <option value="">None</option>{licenseAMCOptions.map(o=><option key={o} value={o}>{o}</option>)}
                            </select>
                          </div>
-                          <div>
-                           <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">SAP Support AMC</label>
-                           <select value={formData.erpDetails.sapSupportAMC.status} onChange={e=>setFormData(p=>({...p, erpDetails: {...p.erpDetails, sapSupportAMC: {...p.erpDetails.sapSupportAMC, status: e.target.value}}}))} className="w-full bg-[#111620] border border-white/5 text-white rounded-lg px-3 py-2 text-sm">
-                             <option value="">None</option>{supportAMCOptions.map(o=><option key={o} value={o}>{o}</option>)}
-                           </select>
-                         </div>
-                       </div>
-                       
-                       {formData.erpDetails.sapSupportAMC.status === 'Active' && (
+                         <div>
+                            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">SAP Support AMC</label>
+                            <select
+                              value={formData.erpDetails.sapSupportAMC.status}
+                              onChange={e=> {
+                                const newStatus = e.target.value;
+                                setFormData(p => ({
+                                  ...p,
+                                  erpDetails: {
+                                    ...p.erpDetails,
+                                    sapSupportAMC: { ...p.erpDetails.sapSupportAMC, status: newStatus },
+                                    sapSupportAMCType: newStatus === 'Task Basis' ? 'Task Basis' : p.erpDetails.sapSupportAMCType
+                                  }
+                                }));
+                              }}
+                              className="w-full bg-[#111620] border border-white/5 text-white rounded-lg px-3 py-2 text-sm"
+                            >
+                              <option value="">None</option>{supportAMCOptions.map(o=><option key={o} value={o}>{o}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        
+                        {(formData.erpDetails.sapSupportAMC.status === 'Active' || formData.erpDetails.sapSupportAMC.status === 'Task Basis') && (
                           <>
-                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border border-emerald-500/20 bg-emerald-500/5 rounded-xl">
-                                <Input label="From Date" type="date" value={formData.erpDetails.sapSupportAMC.fromDate} onChange={e=>setFormData(p=>({...p, erpDetails: {...p.erpDetails, sapSupportAMC: {...p.erpDetails.sapSupportAMC, fromDate: e.target.value}}}))} />
-                                <Input label="To Date" type="date" value={formData.erpDetails.sapSupportAMC.toDate} onChange={e=>setFormData(p=>({...p, erpDetails: {...p.erpDetails, sapSupportAMC: {...p.erpDetails.sapSupportAMC, toDate: e.target.value}}}))} />
-                             </div>
+                             {formData.erpDetails.sapSupportAMC.status !== 'Task Basis' && formData.erpDetails.sapSupportAMCType !== 'Task Basis' && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border border-emerald-500/20 bg-emerald-500/5 rounded-xl">
+                                   <Input label="From Date" type="date" value={formData.erpDetails.sapSupportAMC.fromDate} onChange={e=>setFormData(p=>({...p, erpDetails: {...p.erpDetails, sapSupportAMC: {...p.erpDetails.sapSupportAMC, fromDate: e.target.value}}}))} />
+                                   <Input label="To Date" type="date" value={formData.erpDetails.sapSupportAMC.toDate} onChange={e=>setFormData(p=>({...p, erpDetails: {...p.erpDetails, sapSupportAMC: {...p.erpDetails.sapSupportAMC, toDate: e.target.value}}}))} />
+                                </div>
+                             )}
                              
                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                <div>

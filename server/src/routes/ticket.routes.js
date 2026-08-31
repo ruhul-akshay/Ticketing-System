@@ -47,6 +47,10 @@ router.post('/:id/remarks', authenticate, ticketController.addRemark);
 router.post('/:id/assign', authenticate, authorize('superadmin'), ticketController.assignTicket);
 router.post('/:id/forward', authenticate, ticketController.forwardTicket);
 
+// Work logs sub-resource routes
+router.put('/:id/worklogs/:logId', authenticate, ticketController.updateWorkLog);
+router.delete('/:id/worklogs/:logId', authenticate, ticketController.deleteWorkLog);
+
 // Attachments sub-resource routes
 router.get('/:ticketId/attachments', authenticate, ticketController.getAttachments);
 router.get('/:ticketId/attachment/:attachmentId', authenticate, ticketController.downloadAttachment);

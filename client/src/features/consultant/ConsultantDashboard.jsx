@@ -14,21 +14,68 @@ import api from '../../api/mockAxios';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore } from '../../store/useThemeStore';
-import { useNotificationStore } from '../../store/useNotificationStore';
 import { useSystemSettingStore } from '../../store/useSystemSettingStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
 import StatCard from '../../components/ui/StatCard';
-import NoticeBoard from '../../components/ui/NoticeBoard';
 import { formatHoursToHM, formatDateOnly, formatDateTime } from '../../utils/formatters';
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
+
+const getDateRange = (preset, custom) => {
+  const now = new Date();
+  let start = null;
+  let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  switch (preset) {
+    case 'today':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      break;
+    case 'yesterday':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999);
+      break;
+    case 'last_7':
+      start = new Date();
+      start.setDate(now.getDate() - 7);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'last_30':
+      start = new Date();
+      start.setDate(now.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'this_month':
+      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      break;
+    case 'last_month':
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+      end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      break;
+    case 'custom':
+      if (custom.startDate) {
+        start = new Date(custom.startDate);
+        start.setHours(0, 0, 0, 0);
+      }
+      if (custom.endDate) {
+        end = new Date(custom.endDate);
+        end.setHours(23, 59, 59, 999);
+      }
+      break;
+    default:
+      start = new Date();
+      start.setDate(now.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+      break;
+  }
+  return { start, end };
+};
 
 /* -----------------------------------------------
    Compute stats purely from the local ticket store.
    This is always available and doesn't need a new
    backend endpoint â€” used as the primary data source.
 ----------------------------------------------- */
-function useLocalStats(consultantId) {
+function useLocalStats(consultantId, datePreset = 'last_30', customRange = { startDate: '', endDate: '' }) {
   const { tickets } = useTicketStore();
   const { user } = useAuthStore();
   const { resolvedTheme } = useThemeStore();
@@ -38,6 +85,7 @@ function useLocalStats(consultantId) {
     const currentUserId = user?._id || user?.id;
     const targetConsultantId = consultantId || currentUserId;
     const dept = user?.department;
+    const { start, end } = getDateRange(datePreset, customRange);
 
     // Filter tickets assigned to this consultant
     const consultantTickets = tickets.filter(t => {
@@ -51,7 +99,7 @@ function useLocalStats(consultantId) {
     const resolved = consultantTickets.filter(t => ['resolved', 'closed'].includes(t.status?.toLowerCase())).length;
     const total = consultantTickets.length;
 
-    // Total work hours this consultant has logged across all tickets
+    // Total work hours this consultant has logged within the selected date criteria
     let totalWorkHours = 0;
     const workByDate = {}; // date string â†’ hours
     const workByClient = {}; // clientName â†’ hours
@@ -63,6 +111,12 @@ function useLocalStats(consultantId) {
         const matchesConsultant = String(logBy) === String(targetConsultantId);
 
         if (matchesConsultant) {
+          if (log.date) {
+            const logD = new Date(log.date);
+            if (start && logD < start) return;
+            if (end && logD > end) return;
+          }
+
           const hrs = Number(log.hours) || 0;
           totalWorkHours += hrs;
 
@@ -89,11 +143,7 @@ function useLocalStats(consultantId) {
       if (['open', 'pending', 'assigned', 'hold', 'on hold'].includes(ticket.status?.toLowerCase())) clientTickets[client].open++;
     });
 
-    // Work log by date â€” last 30 days sorted
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const workLogByDate = Object.entries(workByDate)
-      .filter(([d]) => new Date(d) >= thirtyDaysAgo)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, hours]) => ({
         date: new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
@@ -152,57 +202,15 @@ function useLocalStats(consultantId) {
       clientWorkHours,
       reviews: reviewsList
     };
-  }, [tickets, user, consultantId]);
+  }, [tickets, user, consultantId, datePreset, customRange]);
 }
-
-const getDateRange = (preset, custom) => {
-  const now = new Date();
-  let start = null;
-  let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-  switch (preset) {
-    case 'today':
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      break;
-    case 'last_7':
-      start = new Date();
-      start.setDate(now.getDate() - 7);
-      start.setHours(0, 0, 0, 0);
-      break;
-    case 'last_30':
-      start = new Date();
-      start.setDate(now.getDate() - 30);
-      start.setHours(0, 0, 0, 0);
-      break;
-    case 'this_month':
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      break;
-    case 'last_month':
-      start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-      end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-      break;
-    case 'custom':
-      if (custom.startDate) {
-        start = new Date(custom.startDate);
-        start.setHours(0, 0, 0, 0);
-      }
-      if (custom.endDate) {
-        end = new Date(custom.endDate);
-        end.setHours(23, 59, 59, 999);
-      }
-      break;
-    default:
-      start = new Date();
-      start.setDate(now.getDate() - 30);
-      start.setHours(0, 0, 0, 0);
-      break;
-  }
-  return { start, end };
-};
 
 export default function ConsultantDashboard({ consultantId = null }) {
   const navigate = useNavigate();
-  const localStats = useLocalStats(consultantId);
+  const [datePreset, setDatePreset] = useState('last_30');
+  const [customRange, setCustomRange] = useState({ startDate: '', endDate: '' });
+
+  const localStats = useLocalStats(consultantId, datePreset, customRange);
   const { settings, fetchSettings } = useSystemSettingStore();
   const { fetchTickets, tickets: storeTickets } = useTicketStore();
   const { user } = useAuthStore();
@@ -211,19 +219,14 @@ export default function ConsultantDashboard({ consultantId = null }) {
   const { resolvedTheme } = useThemeStore();
   const isDark = resolvedTheme === 'dark';
 
-  const [datePreset, setDatePreset] = useState('last_30');
-  const [customRange, setCustomRange] = useState({ startDate: '', endDate: '' });
-
   const [isWorkHoursModalOpen, setIsWorkHoursModalOpen] = useState(false);
   const [selectedTicketForViewer, setSelectedTicketForViewer] = useState(null);
   const [expandedTicketId, setExpandedTicketId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const { notifications, fetchNotifications, markAsRead, downloadAttachment } = useNotificationStore();
-
   const targetConsultantId = consultantId || user?._id || user?.id;
 
   const workHoursBreakdown = useMemo(() => {
+    const { start, end } = getDateRange(datePreset, customRange);
     const breakdown = [];
     storeTickets.forEach(ticket => {
       let ticketHours = 0;
@@ -231,6 +234,11 @@ export default function ConsultantDashboard({ consultantId = null }) {
       (ticket.workLogs || []).forEach(log => {
         const logBy = log.addedBy?._id || log.addedBy;
         if (String(logBy) === String(targetConsultantId)) {
+          if (log.date) {
+            const d = new Date(log.date);
+            if (start && d < start) return;
+            if (end && d > end) return;
+          }
           const hrs = Number(log.hours) || 0;
           ticketHours += hrs;
           logs.push({
@@ -256,7 +264,21 @@ export default function ConsultantDashboard({ consultantId = null }) {
     });
 
     return breakdown.sort((a, b) => b.hours - a.hours);
-  }, [storeTickets, targetConsultantId]);
+  }, [storeTickets, targetConsultantId, datePreset, customRange]);
+
+  const dateSubLabel = useMemo(() => {
+    const { start, end } = getDateRange(datePreset, customRange);
+    if (!start && !end) return 'Across all logged sessions';
+    if (start && end) {
+      const startStr = start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const endStr = end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      if (startStr === endStr) return `Effort for ${startStr}`;
+      return `${start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${endStr}`;
+    }
+    if (start) return `From ${start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    if (end) return `Up to ${end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    return 'For selected period';
+  }, [datePreset, customRange]);
 
   const filteredBreakdown = useMemo(() => {
     if (!searchQuery.trim()) return workHoursBreakdown;
@@ -269,10 +291,9 @@ export default function ConsultantDashboard({ consultantId = null }) {
   }, [workHoursBreakdown, searchQuery]);
 
   useEffect(() => {
-    fetchNotifications();
     fetchSettings();
     fetchTickets().catch(err => console.error('Error fetching tickets:', err));
-  }, [fetchNotifications, fetchSettings, fetchTickets]);
+  }, [fetchSettings, fetchTickets]);
 
   // Try to load enriched data from the new backend endpoint.
   useEffect(() => {
@@ -475,6 +496,7 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
             className="bg-black/35 border border-white/10 rounded-xl px-3 py-2 text-white text-[13px] font-bold focus:outline-none focus:border-blue-500/40 cursor-pointer min-w-[160px]"
           >
             <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
             <option value="last_7">Last 7 Days</option>
             <option value="last_30">Last 30 Days</option>
             <option value="this_month">This Month</option>
@@ -516,8 +538,6 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
           </button>
         </div>
       </motion.div>
-
-      {!consultantId && <NoticeBoard notifications={notifications} markAsRead={markAsRead} downloadAttachment={downloadAttachment} />}
 
       {/* Consultant Profile Info Bar */}
       <motion.div
@@ -619,8 +639,8 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
         <div className={`grid grid-cols-1 sm:grid-cols-2 ${settings.showBillingToConsultants ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-5`}>
           <StatCard
             title="Total Work Hours"
-            value={`${workHours.total} hrs`}
-            sub="Across all logged sessions"
+            value={formatHoursToHM(workHours.total || 0)}
+            sub={dateSubLabel}
             icon={<Clock size={22} />}
             color="yellow"
             delay={0.2}
@@ -681,11 +701,14 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
               <div className="bg-white/5 rounded-xl p-4 md:col-span-3">
                 <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-2">Categories Handled</p>
                 <div className="flex flex-wrap gap-2">
-                  {department.categories.map(cat => (
-                    <span key={cat} className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-medium">
-                      {cat}
-                    </span>
-                  ))}
+                  {department.categories.map((cat, idx) => {
+                    const catLabel = typeof cat === 'object' ? (cat.name || cat.title || String(idx)) : cat;
+                    return (
+                      <span key={catLabel || idx} className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-medium">
+                        {catLabel}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -898,7 +921,7 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-white tracking-tight">Work Hours Breakdown</h2>
-                    <p className="text-xs text-slate-400 mt-0.5 font-medium">Logged hours detailed per ticket</p>
+                    <p className="text-xs text-slate-400 mt-0.5 font-medium">{dateSubLabel} â€¢ Total: {formatHoursToHM(workHours.total || 0)}</p>
                   </div>
                 </div>
                 <button

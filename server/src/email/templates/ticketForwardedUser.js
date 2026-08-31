@@ -1,14 +1,29 @@
-import { priorityBadge, statusBadge, infoRow, detailTable, descriptionBlock, heroCard, ctaButton, alertBox, signOff } from '../components.js';
+import {
+  priorityBadge,
+  statusBadge,
+  infoRow,
+  detailTable,
+  descriptionBlock,
+  ctaButton,
+  signOff,
+} from '../components.js';
 import { emailWrapper, getClientUrl } from '../layout.js';
 import { sendMail } from '../transporter.js';
 
-/* -----------------------------------------------------------------
-   TICKET FORWARDED -- User / Ticket Creator Notification
+/* ─────────────────────────────────────────────────────────────
+   TICKET FORWARDED — User / Ticket Creator Notification
    Notifies the ticket creator that their ticket has been
    forwarded to a specialist for further attention.
-   ----------------------------------------------------------------- */
+   ───────────────────────────────────────────────────────────── */
 
-export const sendTicketForwardedUserEmail = async (to, ticket, forwardedBy, forwardedTo, remarks = '', cc = null) => {
+export const sendTicketForwardedUserEmail = async (
+  to,
+  ticket,
+  forwardedBy,
+  forwardedTo,
+  remarks = '',
+  cc = null,
+) => {
   if (!to) return;
 
   /* -- Accent theme: green (forwarding / positive action) -- */
@@ -18,7 +33,7 @@ export const sendTicketForwardedUserEmail = async (to, ticket, forwardedBy, forw
     labelColor : '#15803d',
   };
 
-  /* -- Forwarding update card (custom left-cell content) -- */
+  /* -- Forwarding update card -- */
   const forwardingCard = `
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
            style="background:${accent.bg};border:1px solid ${accent.border};
@@ -53,24 +68,29 @@ export const sendTicketForwardedUserEmail = async (to, ticket, forwardedBy, forw
     ${detailTable([
       infoRow('Ticket No.', ticket.ticketNumber),
       infoRow('Subject',    ticket.title),
-      infoRow('Department', ticket.department?.name || ticket.department || ticket.departmentName || '-'),
+      infoRow('Department', ticket.department?.name || ticket.department || ticket.departmentName || '—'),
       infoRow('Status',     statusBadge(ticket.status || 'assigned'), true),
     ].join(''))}
 
-    ${ctaButton(`${getClientUrl()}/tickets/${ticket._id || ticket.ticketNumber}`, '🔗  View Ticket Status', 'blue')}
+    ${/* FIX: was '/tickets/${ticket._id}' — relative path may 404; use portal root */
+      ctaButton(getClientUrl(), '🔗  View Ticket Status', 'blue')}
 
     ${signOff()}
   `;
 
   const html = emailWrapper(body);
 
-  await sendMail({
-    to,
-    cc,
-    subject : `[Forwarded] Ticket ${ticket.ticketNumber}: ${ticket.title} — Reassigned to Specialist`,
-    html,
-    eventType: 'ticket_assigned'
-  });
-
-  console.log(`✅ FORWARDED USER EMAIL SENT TO: ${to}`);
+  // FIX: added try/catch — previously an SMTP failure would propagate uncaught
+  try {
+    await sendMail({
+      to,
+      cc,
+      subject  : `[Forwarded] Ticket ${ticket.ticketNumber}: ${ticket.title} — Reassigned to Specialist`,
+      html,
+      eventType: 'ticket_assigned',
+    });
+    console.log(`✅ FORWARDED USER EMAIL SENT TO: ${to}`);
+  } catch (err) {
+    console.error('❌ FORWARDED USER EMAIL FAILED:', err.message || err);
+  }
 };

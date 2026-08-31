@@ -25,8 +25,9 @@ export const sendConsultantTicketAlertEmail = async (ticket) => {
 
   try {
     /* ── 1. Gather consultants for the ticket's department ──────── */
+    const deptId = ticket.department._id || ticket.department;
     const consultants = await ConsultantProfile.find({
-      department: ticket.department._id || ticket.department,
+      department: deptId,
     }).populate('user', 'name email role');
 
     const consultantEmails = consultants
@@ -48,17 +49,18 @@ export const sendConsultantTicketAlertEmail = async (ticket) => {
     if (recipients.length === 0) return;
 
     /* ── 4. Format date and text fields ────────────────────────── */
-    const submittedAt = ticket.submittedAt ? new Date(ticket.submittedAt) : new Date();
+    // FIX: was ticket.submittedAt (does not exist on schema) — use ticket.createdAt
+    const submittedAt = ticket.createdAt ? new Date(ticket.createdAt) : new Date();
     const formattedDate = submittedAt.toLocaleDateString('en-GB', {
       day  : '2-digit',
       month: 'long',
       year : 'numeric',
-      timeZone: 'Asia/Kolkata'
+      timeZone: 'Asia/Kolkata',
     });
 
     const clientName =
       ticket.createdBy?.client?.name ||
-      ticket.createdBy?.clientName ||
+      ticket.createdBy?.clientName   ||
       null;
 
     const submittedBy = ticket.createdBy
@@ -73,9 +75,9 @@ export const sendConsultantTicketAlertEmail = async (ticket) => {
     };
 
     const rows = [
-      infoRow('Subject', ticket.title || 'No Subject'),
-      infoRow('Department', ticket.department?.name || 'Support'),
-      infoRow('Priority', priorityBadge(ticket.priority)),
+      infoRow('Subject',      ticket.title || 'No Subject'),
+      infoRow('Department',   ticket.department?.name || 'Support'),
+      infoRow('Priority',     priorityBadge(ticket.priority)),
       infoRow('Submitted By', submittedBy),
     ];
 

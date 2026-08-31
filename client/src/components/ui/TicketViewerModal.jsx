@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { extractPastedImages } from '../../features/consultant/detail/TicketConversation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock, ExternalLink, Bot, UserCheck, ArrowRight, Calendar, Activity } from 'lucide-react';
+import { X, Clock, AlertCircle, Building2, Tag, CheckCircle, Download, File, Star, Send, MessageSquare, UploadCloud, Radio, Shield, User, Settings, Trash2, ChevronDown, Eye, Lock, ExternalLink, Bot, UserCheck, ArrowRight, Calendar, Activity, Pencil } from 'lucide-react';
 import api from '../../api/mockAxios';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -177,7 +177,7 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen = true
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const { consultants, fetchConsultants, isLoading: consultantsLoading } = useConsultantStore();
-  const { assignTicket, forwardTicket, deleteTicket, updateTicketStatus } = useTicketStore();
+  const { assignTicket, forwardTicket, deleteTicket, updateTicketStatus, updateWorkLog, deleteWorkLog } = useTicketStore();
   
   const [selectedConsultantId, setSelectedConsultantId] = React.useState('');
   const [assignRemarks, setAssignRemarks] = React.useState('');
@@ -198,6 +198,45 @@ export default function TicketViewerModal({ ticket: initialTicket, isOpen = true
   const [workLogMinutesInput, setWorkLogMinutesInput] = React.useState('');
   const [workLogDate, setWorkLogDate] = React.useState(new Date().toISOString().split('T')[0]);
   const [statusInput, setStatusInput] = React.useState('');
+
+  // Editing existing work log state
+  const [editingModalLogId, setEditingModalLogId] = React.useState(null);
+  const [editModalDate, setEditModalDate] = React.useState('');
+  const [editModalHours, setEditModalHours] = React.useState('');
+  const [editModalMinutes, setEditModalMinutes] = React.useState('');
+
+  const handleStartEditModalLog = (log, logKey) => {
+    setEditingModalLogId(logKey);
+    const dStr = log.date ? new Date(log.date).toISOString().slice(0, 10) : '';
+    setEditModalDate(dStr);
+    const totalMins = Math.round((log.hours || 0) * 60);
+    setEditModalHours(Math.floor(totalMins / 60).toString());
+    setEditModalMinutes((totalMins % 60).toString());
+  };
+
+  const handleSaveEditModalLog = async (logKey) => {
+    try {
+      const totalHours = Number(editModalHours || 0) + (Number(editModalMinutes || 0) / 60);
+      if (totalHours < 0) return alert('Hours cannot be negative.');
+      const rawId = ticket._id || ticket.id || ticket.original?._id;
+      await updateWorkLog(rawId, logKey, { date: editModalDate, hours: totalHours });
+      await fetchTickets({ force: true });
+      setEditingModalLogId(null);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to update work log entry');
+    }
+  };
+
+  const handleDeleteModalLog = async (logKey, logHours) => {
+    if (!window.confirm(`Are you sure you want to delete this work log entry of ${formatCompactHM(logHours)}?`)) return;
+    try {
+      const rawId = ticket._id || ticket.id || ticket.original?._id;
+      await deleteWorkLog(rawId, logKey);
+      await fetchTickets({ force: true });
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to delete work log entry');
+    }
+  };
 
   // Conversation input state
   const [replyText, setReplyText] = React.useState('');
@@ -314,6 +353,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
   const isCurrentSuperAdmin = userRoleLower === 'superadmin';
   const isCurrentConsultant = userRoleLower === 'consultant' || userRoleLower === 'admin' || isCurrentSuperAdmin;
   const isClientRole = user && (user.role === 'User' || user.role === 'user' || userRoleLower === 'user' || user.role === 'Client User' || userRoleLower === 'clientuser');
+  const canViewWorkEffort = Boolean(user && !isClientRole && (isCurrentSuperAdmin || isCurrentConsultant));
   const isSameClient = isClientRole && user.client && (ticket.createdBy?.client?._id === user.client || ticket.createdBy?.client === user.client || ticket.clientName === user.clientName);
   const isOwner = ticket.creatorId && user && isClientRole && (ticket.creatorId === user.id || ticket.creatorId === user._id || (user.isPrimaryContact && isSameClient));
   const hasNoFeedback = !ticket.original?.feedback?.rating;
@@ -455,16 +495,33 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
       return alert('Please enter a valid amount of time.');
     }
     const hours = hrsVal + (minsVal / 60);
+    const rawId = ticket.id || ticket._id || ticket.original?._id;
+
+    // Reset inputs immediately
+    setWorkLogHoursInput('');
+    setWorkLogMinutesInput('');
+
+    // Instant local store update for 0 delay
+    const newLog = {
+      date: workLogDate,
+      hours,
+      addedBy: { _id: user?._id || user?.id, name: user?.name, email: user?.email, role: user?.role }
+    };
+    useTicketStore.setState((state) => ({
+      tickets: state.tickets.map((t) =>
+        t.id === rawId
+          ? { ...t, workLogs: [...(t.workLogs || []), newLog] }
+          : t
+      )
+    }));
+
     setIsSubmitting(true);
     try {
       const logs = [{ date: workLogDate, hours }];
-      await updateTicketStatus(ticket.id, ticket.status, null, null, logs);
-      setWorkLogHoursInput('');
-      setWorkLogMinutesInput('');
-      alert('Effort logged successfully!');
-      await fetchTickets();
+      await updateTicketStatus(rawId, ticket.status, null, null, logs);
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to log effort.');
+      await fetchTickets({ force: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -653,8 +710,23 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               </div>
               <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><User size={12} className="text-purple-500 dark:text-purple-400" /> Assigned To</span>
-                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full" title={ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}>
-                  {ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned'}
+                <span
+                  className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full"
+                  title={(() => {
+                    const consultants = ticket.original?.assignedConsultants || ticket.assignedConsultants;
+                    if (Array.isArray(consultants) && consultants.length > 0) {
+                      return consultants.map(c => typeof c === 'object' ? (c.name || 'Consultant') : c).join(', ');
+                    }
+                    return ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned';
+                  })()}
+                >
+                  {(() => {
+                    const consultants = ticket.original?.assignedConsultants || ticket.assignedConsultants;
+                    if (Array.isArray(consultants) && consultants.length > 0) {
+                      return consultants.map(c => typeof c === 'object' ? (c.name || 'Consultant') : c).join(', ');
+                    }
+                    return ticket.assignedTo?.name || ticket.original?.assignedTo?.name || 'Unassigned';
+                  })()}
                 </span>
               </div>
               <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
@@ -663,7 +735,9 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               </div>
               <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Building2 size={12} /> Dept</span>
-                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full">{ticket.department}</span>
+                <span className="text-[13px] font-bold text-slate-900 dark:text-white tracking-wide truncate w-full">
+                  {typeof ticket.department === 'object' ? (ticket.department?.name || 'General') : (ticket.department || 'General')}
+                </span>
               </div>
               <div className="bg-slate-100/80 dark:bg-[#1d2633]/50 border border-slate-200 dark:border-white/5 p-3 sm:p-3.5 rounded-xl flex flex-col gap-1 items-start shadow-sm">
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Tag size={12} /> Category</span>
@@ -691,121 +765,209 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
               )}
             </div>
 
-            {/* Consultant Work & Effort Summary */}
-            <div className="mb-6 relative z-10 w-full bg-slate-100/90 dark:bg-[#1d2633]/60 border border-emerald-500/30 dark:border-emerald-500/20 p-4 sm:p-5 rounded-[1.2rem] space-y-3.5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
-                    <Activity size={15} />
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider truncate">
-                      Work & Effort Breakdown
-                    </h4>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                      Consultants who worked on this ticket & hours logged
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30 whitespace-nowrap shrink-0">
-                  Total: {formatCompactHM(grandTotalHours)}
-                </span>
-              </div>
-
-              {memberEfforts.length > 0 ? (
-                <div className="space-y-3">
-                  {/* Consultant breakdown cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {memberEfforts.map((member) => {
-                      const pct =
-                        grandTotalHours > 0
-                          ? Math.round((member.totalHours / grandTotalHours) * 100)
-                          : 0;
-
-                      return (
-                        <div
-                          key={member.id || member.name}
-                          className="p-3 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 rounded-xl space-y-2 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm">
-                                {member.name[0]?.toUpperCase() || 'U'}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                  {member.name}
-                                </p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                                  {member.role || 'Consultant'}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0 flex flex-col items-end">
-                              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 tabular-nums px-2 py-0.5 bg-emerald-500/10 rounded-md border border-emerald-500/20 whitespace-nowrap">
-                                {formatCompactHM(member.totalHours)}
-                              </span>
-                              <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
-                                {pct}% of total
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                              style={{ width: `${Math.max(pct, 5)}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Itemized Work Logs History */}
-                  {(ticket.workLogs || ticket.original?.workLogs)?.length > 0 && (
-                    <div className="pt-2 border-t border-slate-200 dark:border-white/5">
-                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-2">
-                        Itemized Work Log History ({(ticket.workLogs || ticket.original?.workLogs).length} entries)
-                      </span>
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
-                        {(ticket.workLogs || ticket.original?.workLogs).map((log, lIdx) => {
-                          const info = resolveConsultantInfo(log.addedBy, ticket, consultants, user);
-                          return (
-                            <div
-                              key={lIdx}
-                              className="flex items-center justify-between gap-2 px-3 py-2 bg-white dark:bg-black/20 rounded-lg text-xs border border-slate-200 dark:border-white/5 shadow-sm"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium shrink-0">
-                                  {log.date ? new Date(log.date).toLocaleDateString('en-GB') : '—'}
-                                </span>
-                                <span className="font-bold text-slate-900 dark:text-white truncate">{info.name}</span>
-                              </div>
-                              <span className="font-black text-emerald-600 dark:text-emerald-400 text-xs shrink-0 whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                {formatCompactHM(log.hours)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+            {/* Consultant Work & Effort Summary (Visible to Super Admin & Consultants only, hidden from Client Users) */}
+            {canViewWorkEffort && (
+              <div className="mb-6 relative z-10 w-full bg-slate-100/90 dark:bg-[#1d2633]/60 border border-emerald-500/30 dark:border-emerald-500/20 p-4 sm:p-5 rounded-[1.2rem] space-y-3.5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <Activity size={15} />
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="p-3.5 bg-white dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 flex items-center justify-between text-xs shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <User size={14} className="text-slate-400" />
-                    <span className="text-slate-700 dark:text-slate-300 font-bold">
-                      Assigned to: <span className="text-slate-900 dark:text-white">{ticket.assignedTo?.name || ticket.original?.assignedTo?.name || ticket.assignee || 'Unassigned'}</span>
-                    </span>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider truncate">
+                        Work & Effort Breakdown
+                      </h4>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                        Consultants who worked on this ticket & hours logged
+                      </p>
+                    </div>
                   </div>
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 italic">
-                    0 hours logged so far
+                  <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30 whitespace-nowrap shrink-0">
+                    Total: {formatCompactHM(grandTotalHours)}
                   </span>
                 </div>
-              )}
-            </div>
+
+                {memberEfforts.length > 0 ? (
+                  <div className="space-y-3">
+                    {/* Consultant breakdown cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {memberEfforts.map((member) => {
+                        const pct =
+                          grandTotalHours > 0
+                            ? Math.round((member.totalHours / grandTotalHours) * 100)
+                            : 0;
+
+                        return (
+                          <div
+                            key={member.id || member.name}
+                            className="p-3 bg-white dark:bg-black/30 border border-slate-200 dark:border-white/5 rounded-xl space-y-2 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm">
+                                  {member.name[0]?.toUpperCase() || 'U'}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                    {member.name}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                                    {member.role || 'Consultant'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 flex flex-col items-end">
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 tabular-nums px-2 py-0.5 bg-emerald-500/10 rounded-md border border-emerald-500/20 whitespace-nowrap">
+                                  {formatCompactHM(member.totalHours)}
+                                </span>
+                                <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">
+                                  {pct}% of total
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
+                                style={{ width: `${Math.max(pct, 5)}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Itemized Work Logs History */}
+                    {(ticket.workLogs || ticket.original?.workLogs)?.length > 0 && (
+                      <div className="pt-2 border-t border-slate-200 dark:border-white/5">
+                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-2">
+                          Itemized Work Log History ({(ticket.workLogs || ticket.original?.workLogs).length} entries)
+                        </span>
+                        <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar pr-1">
+                          {(ticket.workLogs || ticket.original?.workLogs).map((log, lIdx) => {
+                            const info = resolveConsultantInfo(log.addedBy, ticket, consultants, user);
+                            const logKey = log._id || log.id || lIdx;
+                            const isEditing = editingModalLogId === logKey;
+
+                            const logUserId = String(log.addedBy?._id || log.addedBy?.id || log.addedBy || '');
+                            const currentUserId = String(user?._id || user?.id || '');
+                            const isOwnLog =
+                              (currentUserId && logUserId && currentUserId === logUserId) ||
+                              (user?.name && info.name === user.name) ||
+                              user?.role === 'superadmin' ||
+                              user?.role === 'admin';
+
+                            if (isEditing) {
+                              return (
+                                <div
+                                  key={logKey}
+                                  className="flex flex-wrap items-center gap-1.5 p-2 bg-emerald-500/10 rounded-lg text-xs border border-emerald-500/30"
+                                >
+                                  <input
+                                    type="date"
+                                    value={editModalDate}
+                                    onChange={(e) => setEditModalDate(e.target.value)}
+                                    className="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded px-1.5 py-0.5 text-xs font-bold text-slate-800 dark:text-white"
+                                  />
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="Hrs"
+                                    value={editModalHours}
+                                    onChange={(e) => setEditModalHours(e.target.value)}
+                                    className="w-12 bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded px-1.5 py-0.5 text-xs font-bold text-right text-slate-800 dark:text-white"
+                                  />
+                                  <span className="text-[10px] text-slate-400 font-bold">h</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="59"
+                                    placeholder="Mins"
+                                    value={editModalMinutes}
+                                    onChange={(e) => setEditModalMinutes(e.target.value)}
+                                    className="w-12 bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 rounded px-1.5 py-0.5 text-xs font-bold text-right text-slate-800 dark:text-white"
+                                  />
+                                  <span className="text-[10px] text-slate-400 font-bold">m</span>
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditModalLog(logKey)}
+                                      className="p-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer"
+                                      title="Save"
+                                    >
+                                      <CheckCircle size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingModalLogId(null)}
+                                      className="p-1 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 text-slate-600 dark:text-slate-300 rounded cursor-pointer"
+                                      title="Cancel"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={logKey}
+                                className="flex items-center justify-between gap-2 px-3 py-2 bg-white dark:bg-black/20 rounded-lg text-xs border border-slate-200 dark:border-white/5 shadow-sm"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium shrink-0">
+                                    {log.date ? new Date(log.date).toLocaleDateString('en-GB') : '—'}
+                                  </span>
+                                  <span className="font-bold text-slate-900 dark:text-white truncate">{info.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="font-black text-emerald-600 dark:text-emerald-400 text-xs shrink-0 whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                    {formatCompactHM(log.hours)}
+                                  </span>
+                                  {isOwnLog && (
+                                    <div className="flex items-center gap-0.5 pl-1 border-l border-slate-200 dark:border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditModalLog(log, logKey)}
+                                        className="p-1 text-slate-400 hover:text-blue-500 rounded transition-all cursor-pointer"
+                                        title="Edit your time entry"
+                                      >
+                                        <Pencil size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteModalLog(logKey, log.hours)}
+                                        className="p-1 text-slate-400 hover:text-red-500 rounded transition-all cursor-pointer"
+                                        title="Delete your time entry"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 bg-white dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5 flex items-center justify-between text-xs shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <User size={14} className="text-slate-400" />
+                      <span className="text-slate-700 dark:text-slate-300 font-bold">
+                        Assigned to: <span className="text-slate-900 dark:text-white">{ticket.assignedTo?.name || ticket.original?.assignedTo?.name || ticket.assignee || 'Unassigned'}</span>
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 italic">
+                      0 hours logged so far
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Description */}
             <div className="relative z-10 mb-8">
