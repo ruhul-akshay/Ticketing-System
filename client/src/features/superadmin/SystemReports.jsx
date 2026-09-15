@@ -14,6 +14,8 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend 
 } from 'recharts';
+import * as XLSX from 'xlsx';
+import { formatDateTimeSplit } from '../../utils/exportHelpers';
 
 const PRIORITY_COLORS = {
   critical: '#ef4444', // Red
@@ -354,24 +356,22 @@ export default function SystemReports() {
       });
     }
 
-    const csvContent = '\uFEFF' + [
-      headers.join(','),
-      ...rows.map(row => row.map(val => {
-        let clean = val === null || val === undefined ? '' : String(val);
-        clean = clean.replace(/"/g, '""');
-        if (clean.includes(',') || clean.includes('\n') || clean.includes('"')) {
-          clean = `"${clean}"`;
-        }
-        return clean;
-      }).join(','))
-    ].join('\n');
+    const allRows = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(allRows);
+    ws['!cols'] = [
+      { wch: 25 },
+      { wch: 40 },
+      { wch: 25 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 20 }
+    ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'System Report');
 
-    let nameWithoutExt = filename.replace('.csv', '');
+    let nameWithoutExt = filename.replace(/\.(csv|xlsx)$/i, '');
     let fileSuffix = '';
     if (timeframe === 'weekly') {
       fileSuffix = '_weekly';
@@ -385,11 +385,7 @@ export default function SystemReports() {
       fileSuffix = '_lifetime';
     }
 
-    link.setAttribute('download', `${nameWithoutExt}${fileSuffix}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(wb, `${nameWithoutExt}${fileSuffix}.xlsx`);
   };
 
   const handleExportIndividual = async (consultantId, name) => {
@@ -467,35 +463,36 @@ export default function SystemReports() {
 
       // Section 6: Customer satisfaction reviews
       csvRows.push(['CUSTOMER SATISFACTION FEEDBACK']);
-      csvRows.push(['Ticket Number', 'Date', 'Rating (Stars)', 'Feedback Comment']);
+      csvRows.push(['Ticket Number', 'Submitted Date', 'Submitted Time', 'Rating (Stars)', 'Feedback Comment']);
       if (reviews.length === 0) {
-        csvRows.push(['No customer reviews submitted', '-', '-', '-']);
+        csvRows.push(['No customer reviews submitted', '-', '-', '-', '-']);
       } else {
         reviews.forEach(rev => {
-          csvRows.push([rev.ticketNumber || 'N/A', rev.date ? new Date(rev.date).toLocaleDateString() : 'N/A', `${rev.rating} Stars`, rev.comment || '-']);
+          const revDT = formatDateTimeSplit(rev.date);
+          csvRows.push([
+            rev.ticketNumber || 'N/A',
+            revDT.dateStr || 'N/A',
+            revDT.timeStr || 'N/A',
+            `${rev.rating} Stars`,
+            rev.comment || '-'
+          ]);
         });
       }
 
-      // Convert rows to CSV
-      const csvContent = '\uFEFF' + csvRows.map(row => row.map(val => {
-        let clean = val === null || val === undefined ? '' : String(val);
-        clean = clean.replace(/"/g, '""');
-        if (clean.includes(',') || clean.includes('\n') || clean.includes('"')) {
-          clean = `"${clean}"`;
-        }
-        return clean;
-      }).join(',')).join('\n');
+      const ws = XLSX.utils.aoa_to_sheet(csvRows);
+      ws['!cols'] = [
+        { wch: 25 },
+        { wch: 30 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 40 }
+      ];
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Consultant Spec');
+
       const safeName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `consultant_report_${safeName}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      XLSX.writeFile(wb, `consultant_report_${safeName}.xlsx`);
     } catch (err) {
       console.error('Failed to export individual consultant report:', err);
       alert('Error occurred while compiling individual report.');

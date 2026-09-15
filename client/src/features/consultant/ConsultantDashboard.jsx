@@ -18,6 +18,8 @@ import { useSystemSettingStore } from '../../store/useSystemSettingStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
 import StatCard from '../../components/ui/StatCard';
 import { formatHoursToHM, formatDateOnly, formatDateTime } from '../../utils/formatters';
+import * as XLSX from 'xlsx';
+import { formatDateTimeSplit } from '../../utils/exportHelpers';
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 
@@ -332,84 +334,78 @@ export default function ConsultantDashboard({ consultantId = null }) {
       ? `${start.toLocaleDateString()} to ${end.toLocaleDateString()}` 
       : 'All Time';
 
-    let csvContent = '\uFEFF'; // Excel UTF-8 BOM
-    const escapeCSV = (str) => {
-      if (str === null || str === undefined) return '';
-      const stringified = String(str);
-      if (stringified.includes(',') || stringified.includes('"') || stringified.includes('\n')) {
-        return `"${stringified.replace(/"/g, '""')}"`;
-      }
-      return stringified;
-    };
+    const rows = [];
+    rows.push(['CONSULTANT PERFORMANCE REPORT']);
+    rows.push([`Generated on: ${new Date().toLocaleString()}`]);
+    rows.push([`Date Filter Range: ${dateRangeStr}`]);
+    rows.push([]);
 
-    const addRow = (arr) => {
-      csvContent += arr.map(escapeCSV).join(',') + '\r\n';
-    };
+    rows.push(['1. PROFILE INFORMATION']);
+    rows.push(['Field', 'Value']);
+    rows.push(['Name', consultant.name || '—']);
+    rows.push(['Email', consultant.email || '—']);
+    rows.push(['Employee Code', consultant.employeeCode || '—']);
+    rows.push(['Department', department?.name || '—']);
+    rows.push(['Role/Title', consultant.role || 'Consultant']);
+    rows.push([]);
 
-    addRow(['CONSULTANT PERFORMANCE REPORT']);
-    addRow([`Generated on: ${new Date().toLocaleString()}`]);
-    addRow([`Date Filter Range: ${dateRangeStr}`]);
-    addRow([]);
+    rows.push(['2. PERFORMANCE METRICS']);
+    rows.push(['Metric', 'Value']);
+    rows.push(['Total Assigned Tickets', tickets.total]);
+    rows.push(['Resolved Tickets', tickets.resolved]);
+    rows.push(['Open Tickets', tickets.open]);
+    rows.push(['Resolution Rate', `${tickets.total > 0 ? Math.round((tickets.resolved / tickets.total) * 100) : 0}%`]);
+    rows.push(['Total Logged Work Hours', `${workHours.total} hrs`]);
+    rows.push(['Average Resolution Time', `${workHours.avgResolutionHours || 0} hrs`]);
+    rows.push([]);
 
-    addRow(['1. PROFILE INFORMATION']);
-    addRow(['Field', 'Value']);
-    addRow(['Name', consultant.name || '—']);
-    addRow(['Email', consultant.email || '—']);
-    addRow(['Employee Code', consultant.employeeCode || '—']);
-    addRow(['Department', department?.name || '—']);
-    addRow(['Role/Title', consultant.role || 'Consultant']);
-    addRow([]);
-
-    addRow(['2. PERFORMANCE METRICS']);
-    addRow(['Metric', 'Value']);
-    addRow(['Total Assigned Tickets', tickets.total]);
-    addRow(['Resolved Tickets', tickets.resolved]);
-    addRow(['Open Tickets', tickets.open]);
-    addRow(['Resolution Rate', `${tickets.total > 0 ? Math.round((tickets.resolved / tickets.total) * 100) : 0}%`]);
-    addRow(['Total Logged Work Hours', `${workHours.total} hrs`]);
-    addRow(['Average Resolution Time', `${workHours.avgResolutionHours || 0} hrs`]);
-    addRow([]);
-
-    addRow(['3. WORK DISTRIBUTION BY CLIENT']);
-    addRow(['Client', 'Total Tickets', 'Resolved Tickets', 'Open Tickets', 'Resolution Rate']);
+    rows.push(['3. WORK DISTRIBUTION BY CLIENT']);
+    rows.push(['Client', 'Total Tickets', 'Resolved Tickets', 'Open Tickets', 'Resolution Rate']);
     clientBreakdown.forEach(item => {
       const pct = item.total > 0 ? Math.round((item.resolved / item.total) * 100) : 0;
-      addRow([item.client, item.total, item.resolved, item.open, `${pct}%`]);
+      rows.push([item.client, item.total, item.resolved, item.open, `${pct}%`]);
     });
-    if (clientBreakdown.length === 0) addRow(['No ticket data available.']);
-    addRow([]);
+    if (clientBreakdown.length === 0) rows.push(['No ticket data available.']);
+    rows.push([]);
 
-    addRow(['4. WORK HOURS BY CLIENT']);
-    addRow(['Client', 'Hours Logged', 'Ticket Count']);
+    rows.push(['4. WORK HOURS BY CLIENT']);
+    rows.push(['Client', 'Hours Logged', 'Ticket Count']);
     clientWorkHours.forEach(item => {
-      addRow([item.client, item.hours, item.ticketCount]);
+      rows.push([item.client, item.hours, item.ticketCount]);
     });
-    if (clientWorkHours.length === 0) addRow(['No work hours logged yet.']);
-    addRow([]);
+    if (clientWorkHours.length === 0) rows.push(['No work hours logged yet.']);
+    rows.push([]);
 
-    addRow(['5. CLIENT REVIEWS & FEEDBACK']);
-    addRow(['Ticket Number', 'Title', 'Rating', 'Client', 'Comment', 'Date']);
+    rows.push(['5. CLIENT REVIEWS & FEEDBACK']);
+    rows.push(['Ticket Number', 'Title', 'Rating', 'Client', 'Comment', 'Submitted Date', 'Submitted Time']);
     (reviews || []).forEach(r => {
-      addRow([
+      const dt = formatDateTimeSplit(r.submittedAt);
+      rows.push([
         r.ticketNumber,
         r.title,
         r.rating,
         r.userName,
         r.comment,
-        r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '—'
+        dt.dateStr || '—',
+        dt.timeStr || '—'
       ]);
     });
-    if (!reviews || reviews.length === 0) addRow(['No reviews received.']);
+    if (!reviews || reviews.length === 0) rows.push(['No reviews received.']);
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Consultant_Report_${consultant.name?.replace(/\s+/g, '_') || 'Consultant'}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 25 },
+      { wch: 35 },
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 16 },
+      { wch: 16 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Performance');
+    const filename = `Consultant_Report_${consultant.name?.replace(/\s+/g, '_') || 'Consultant'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, filename);
   };
 
   const downloadConsultantReport = () => {

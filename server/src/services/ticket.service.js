@@ -122,7 +122,8 @@ import {
   sendNewMessageNotificationEmail,
   sendTicketAssignedConsultantEmail,
   sendTicketForwardedUserEmail,
-  sendTicketForwardedConsultantEmail
+  sendTicketForwardedConsultantEmail,
+  sendCcAddedNotificationEmail,
 } from '../utils/email.js';
 
 /* ── Module-level helpers ─────────────────────────────────────────────────── */
@@ -672,6 +673,9 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
     throw new AppError("A written 'solution' is required to mark a ticket as resolved.", 400);
   }
 
+  // Snapshot existing CC list before the update so we can detect newly added addresses
+  const oldCcEmails = new Set((ticket.ccEmails || []).map(e => e.toLowerCase().trim()));
+
   Object.assign(ticket, { ...restBody, solution });
 
   if (remarks && typeof remarks === 'string' && remarks.trim().length > 0) {
@@ -777,6 +781,25 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
   const finalNewStatus = ticket.status;
 
   await ticket.save();
+
+  // ── Notify newly added CC recipients ──────────────────────────────────────
+  // After save, ticket.ccEmails holds the merged list. Diff against the snapshot
+  // taken before Object.assign to find addresses that are genuinely new.
+  const newCcEmails = (ticket.ccEmails || [])
+    .map(e => e.toLowerCase().trim())
+    .filter(e => e && !oldCcEmails.has(e));
+
+  if (newCcEmails.length > 0) {
+    // Fetch a populated version of the ticket for the email template
+    Ticket.findById(ticket._id)
+      .populate({ path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } })
+      .populate({ path: 'department', select: 'name' })
+      .then(populatedTicket => {
+        sendCcAddedNotificationEmail(newCcEmails, populatedTicket || ticket, currentUser)
+          .catch(err => console.error('CC ADDED EMAIL FAILED:', err.message));
+      })
+      .catch(err => console.error('CC ADDED EMAIL POPULATE FAILED:', err.message));
+  }
 
   if (statusChanged) {
     try {

@@ -258,12 +258,12 @@ export default function TicketConversation({
         </span>
       </div>
 
-      <div className="space-y-6 bg-slate-100/50 dark:bg-black/40 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200 dark:border-white/5 relative overflow-hidden">
+      <div className="space-y-6 bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200 dark:border-slate-800 relative overflow-hidden">
         {remarks.length === 0 ? (
-          <div className="text-center py-10 sm:py-14 bg-slate-50/50 dark:bg-white/[0.01] rounded-2xl border border-slate-200 dark:border-white/5">
-            <MessageSquare size={36} className="text-slate-400 dark:text-slate-800 mx-auto mb-3 opacity-50" />
-            <p className="text-[10px] font-black text-slate-500 dark:text-slate-600 uppercase tracking-[0.3em]">
-              Awaiting transmission
+          <div className="text-center py-10 sm:py-14 bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <MessageSquare size={36} className="text-slate-400 dark:text-slate-600 mx-auto mb-3 opacity-60" />
+            <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">
+              No remarks logged yet
             </p>
           </div>
         ) : (
@@ -290,30 +290,30 @@ export default function TicketConversation({
                     <div
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-[11px] font-black shadow-sm shrink-0 ${
                         remark.isInternal
-                          ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-black ring-2 ring-amber-500/20'
+                          ? 'bg-amber-500 text-black ring-2 ring-amber-500/20'
                           : isConsultantRole
                           ? 'bg-blue-600 text-white ring-2 ring-blue-600/20'
-                          : 'bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-slate-300'
+                          : 'bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
                       }`}
                     >
                       {senderName[0]?.toUpperCase() || 'U'}
                     </div>
                     <div className={`flex flex-col ${alignLeft ? 'items-start' : 'items-end'}`}>
                       <div className={`flex items-center gap-1.5 ${alignLeft ? 'flex-row' : 'flex-row-reverse'}`}>
-                        <span className="text-xs font-bold text-slate-800 dark:text-white">{senderName}</span>
+                        <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{senderName}</span>
                         <span
                           className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
                             remark.isInternal
-                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
                               : isConsultantRole
-                              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
-                              : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                              ? 'bg-blue-500/15 text-blue-800 dark:text-blue-300 border border-blue-500/30'
+                              : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600'
                           }`}
                         >
                           {remark.isInternal ? 'Internal Note' : isConsultantRole ? 'Support' : 'Client'}
                         </span>
                       </div>
-                      <span className="text-[9px] text-slate-500 font-bold mt-0.5">{formatDateTime(remark.addedAt)}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{formatDateTime(remark.addedAt)}</span>
                     </div>
                   </div>
 
@@ -321,21 +321,27 @@ export default function TicketConversation({
                   <div
                     className={`relative p-4 sm:p-5 rounded-2xl sm:rounded-3xl shadow-sm border transition-all ${
                       remark.isInternal
-                        ? 'bg-amber-50/70 dark:bg-[#1c160e]/50 border-amber-200/50 dark:border-white/5 border-l-4 border-l-amber-500 text-slate-800 dark:text-slate-200 rounded-tl-none'
+                        ? 'bg-amber-50 dark:bg-[#20180d] border-amber-200 dark:border-amber-900/60 border-l-4 border-l-amber-500 text-amber-950 dark:text-amber-100 rounded-tl-none'
                         : isConsultantRole
-                        ? 'bg-blue-600 border-blue-400/30 text-white rounded-tr-none'
-                        : 'bg-slate-200 dark:bg-[#1e293b] border-slate-300 dark:border-white/5 text-slate-800 dark:text-slate-200 rounded-tl-none'
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-md rounded-tr-none'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-l-4 border-l-slate-400 dark:border-l-slate-500 text-slate-900 dark:text-slate-100 rounded-tl-none'
                     }`}
                   >
                     {remark.text && (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{remark.text}</p>
+                      <p className={`text-sm leading-relaxed whitespace-pre-wrap font-medium ${
+                        remark.isInternal
+                          ? 'text-amber-950 dark:text-amber-100'
+                          : isConsultantRole
+                          ? 'text-white'
+                          : 'text-slate-900 dark:text-slate-100'
+                      }`}>{remark.text}</p>
                     )}
 
                     {/* Attachments */}
                     {Array.isArray(remark.attachments) && remark.attachments.length > 0 && (
                       <div
                         className={`space-y-2.5 ${remark.text ? 'mt-3 pt-3 border-t' : ''} ${
-                          isBlueBubble ? 'border-white/20' : 'border-slate-300 dark:border-white/5'
+                          isBlueBubble ? 'border-white/20' : 'border-slate-200 dark:border-white/10'
                         }`}
                       >
                         {remark.attachments.map((file, fIdx) => {
@@ -358,7 +364,7 @@ export default function TicketConversation({
                               className={`rounded-xl overflow-hidden border ${
                                 isBlueBubble
                                   ? 'bg-black/20 border-white/20'
-                                  : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/10'
+                                  : 'bg-slate-50 dark:bg-black/30 border-slate-200 dark:border-white/10'
                               }`}
                             >
                               <div
@@ -379,21 +385,21 @@ export default function TicketConversation({
                               </div>
                               <div className="flex items-center justify-between p-2 px-3 text-xs gap-2">
                                 <div className="min-w-0 flex items-center gap-1.5">
-                                  <ImageIcon size={13} className="shrink-0 text-blue-400" />
-                                  <span className="truncate font-bold text-[11px]" title={fileName}>{fileName}</span>
-                                  <span className="text-[9px] opacity-60 shrink-0">({formatFileSize(file.size)})</span>
+                                  <ImageIcon size={13} className={`shrink-0 ${isBlueBubble ? 'text-white' : 'text-blue-500 dark:text-blue-400'}`} />
+                                  <span className={`truncate font-bold text-[11px] ${isBlueBubble ? 'text-white' : 'text-slate-900 dark:text-white'}`} title={fileName}>{fileName}</span>
+                                  <span className={`text-[9px] shrink-0 ${isBlueBubble ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>({formatFileSize(file.size)})</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <button
                                     type="button"
                                     onClick={(e) => onViewAttachment(e, rawTicketId, file._id, fileName, file.mimeType || file.contentType || 'image/png')}
-                                    className="p-1.5 hover:bg-white/20 rounded-lg cursor-pointer"
+                                    className={`p-1.5 rounded-lg cursor-pointer ${isBlueBubble ? 'hover:bg-white/20 text-white' : 'hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300'}`}
                                     title="View Full Size"
                                   ><Eye size={13} /></button>
                                   <button
                                     type="button"
                                     onClick={(e) => onDownloadAttachment(e, rawTicketId, file._id, fileName)}
-                                    className="p-1.5 hover:bg-white/20 rounded-lg cursor-pointer"
+                                    className={`p-1.5 rounded-lg cursor-pointer ${isBlueBubble ? 'hover:bg-white/20 text-white' : 'hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300'}`}
                                     title="Download"
                                   ><Download size={13} /></button>
                                 </div>
@@ -404,23 +410,23 @@ export default function TicketConversation({
                               key={fIdx}
                               className={`flex items-center gap-3 p-2.5 rounded-xl border w-full ${
                                 isBlueBubble
-                                  ? 'bg-white/10 border-white/10 hover:bg-white/20'
-                                  : 'bg-white dark:bg-black/20 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-black/30'
+                                  ? 'bg-white/15 border-white/20 hover:bg-white/25 text-white'
+                                  : 'bg-slate-50 dark:bg-black/20 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-black/30 text-slate-800 dark:text-slate-200'
                               }`}
                             >
                               <div className={`p-2 rounded-lg ${isBlueBubble ? 'bg-white/20 text-white' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
                                 <File size={14} />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-bold truncate" title={fileName}>{fileName}</p>
-                                <p className="text-[10px] text-slate-400">{formatFileSize(file.size)}</p>
+                                <p className={`text-xs font-bold truncate ${isBlueBubble ? 'text-white' : 'text-slate-900 dark:text-white'}`} title={fileName}>{fileName}</p>
+                                <p className={`text-[10px] ${isBlueBubble ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>{formatFileSize(file.size)}</p>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
                                 <button type="button" onClick={(e) => onViewAttachment(e, rawTicketId, file._id, fileName, file.mimeType || file.contentType)}
-                                  className={`p-1.5 rounded-lg border ${isBlueBubble ? 'bg-white/10 hover:bg-white/20 border-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:text-blue-600'} cursor-pointer`}
+                                  className={`p-1.5 rounded-lg border ${isBlueBubble ? 'bg-white/10 hover:bg-white/20 border-white/20 text-white' : 'bg-white hover:bg-slate-200 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'} cursor-pointer`}
                                   title="View File"><Eye size={13} /></button>
                                 <button type="button" onClick={(e) => onDownloadAttachment(e, rawTicketId, file._id, fileName)}
-                                  className={`p-1.5 rounded-lg border ${isBlueBubble ? 'bg-white/10 hover:bg-white/20 border-white/20 text-white' : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500 hover:text-emerald-600'} cursor-pointer`}
+                                  className={`p-1.5 rounded-lg border ${isBlueBubble ? 'bg-white/10 hover:bg-white/20 border-white/20 text-white' : 'bg-white hover:bg-slate-200 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'} cursor-pointer`}
                                   title="Download"><Download size={13} /></button>
                               </div>
                             </div>
@@ -519,10 +525,10 @@ export default function TicketConversation({
                     ? 'Share confidential notes (Ctrl+V / Cmd+V to paste screenshot)...'
                     : 'Provide conversational updates (Ctrl+V / Cmd+V to paste screenshot)...'
                 }
-                className={`w-full bg-slate-50 dark:bg-[#0f172a] border rounded-2xl px-4 sm:px-5 py-3 sm:py-4 text-xs sm:text-sm font-medium text-slate-800 dark:text-white focus:outline-none transition-all resize-none shadow-inner pr-24 sm:pr-28 ${
+                className={`w-full bg-white dark:bg-slate-800 border rounded-2xl px-4 sm:px-5 py-3 sm:py-4 text-xs sm:text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none transition-all resize-none shadow-sm pr-24 sm:pr-28 ${
                   isInternal
-                    ? 'border-amber-500/30 focus:border-amber-500/60 shadow-amber-500/5'
-                    : 'border-slate-200 dark:border-white/10 focus:border-blue-500/50'
+                    ? 'border-amber-500/40 focus:border-amber-500 ring-1 ring-amber-500/20'
+                    : 'border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30'
                 }`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {

@@ -1,5 +1,13 @@
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 import { logger } from '../utils/logger.js';
+
+// Resolve DNS SRV query issues (EBADRESP) common on some networks/macOS
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (dnsErr) {
+  logger.warn(`Failed to set custom DNS servers: ${dnsErr.message}`);
+}
 
 // ── Connection options for production resilience ──────────────────────────────
 const MONGOOSE_OPTIONS = {

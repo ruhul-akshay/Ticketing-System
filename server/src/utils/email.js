@@ -15,6 +15,7 @@ export {
   sendTicketForwardedConsultantEmail,
   sendTicketAssignedConsultantEmail,
   sendTicketStatusUpdatedEmail,
+  sendCcAddedNotificationEmail,
   sendNewMessageNotificationEmail,
   sendWelcomeCredentialsEmail,
   sendTemporaryPasswordEmail,

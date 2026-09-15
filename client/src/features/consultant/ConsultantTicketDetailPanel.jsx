@@ -17,6 +17,7 @@ import TicketConversation from './detail/TicketConversation';
 import TicketWorkLogsSection from './detail/TicketWorkLogsSection';
 import TicketResolutionSection from './detail/TicketResolutionSection';
 import TicketForwardingSection from './detail/TicketForwardingSection';
+import TicketCcEmailPanel from './detail/TicketCcEmailPanel';
 import FilePreviewModal from '../../components/ui/FilePreviewModal';
 
 export default function ConsultantTicketDetailPanel({
@@ -605,6 +606,9 @@ ${(ticket.original?.assignmentHistory || [])
                 </p>
               </div>
             </section>
+
+            {/* Associated Files */}
+            <TicketCcEmailPanel ticket={ticket} rawTicketId={rawTicketId} />
 
             {/* Associated Files */}
             <TicketAssociatedFiles

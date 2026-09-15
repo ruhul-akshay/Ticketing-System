@@ -119,14 +119,14 @@ export default function TicketFilterBar({
             <span className="hidden sm:inline">Filters</span>
           </button>
 
-          {/* Export CSV Button */}
+          {/* Export Excel Button */}
           {onExportCSV && (
             <button
               type="button"
               onClick={onExportCSV}
               disabled={isExporting}
               className="px-3.5 py-3 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 rounded-xl text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
-              title="Export CSV"
+              title="Export to Excel"
             >
               <Download size={14} />
               <span className="hidden sm:inline">{isExporting ? 'Exporting...' : 'Export'}</span>

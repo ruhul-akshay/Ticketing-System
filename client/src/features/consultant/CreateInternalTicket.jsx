@@ -92,7 +92,7 @@ export default function CreateInternalTicket() {
   // Fetch client users when client selection changes
   useEffect(() => {
     if (selectedClient) {
-      api.get(`/client-users?clientId=${selectedClient}&limit=1000`)
+      api.get(`/client-users?clientId=${selectedClient}&role=clientuser&limit=1000`)
         .then(res => {
           if (res.data.success) {
             setClientUsers(res.data.users || []);
