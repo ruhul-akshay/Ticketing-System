@@ -25,6 +25,11 @@ const clientSchema = new mongoose.Schema({
     type: String,
     unique: true
   },
+  companyShortName: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   
   // ERP Details (Header Level - Non-editable after initial setup)
   erpDetails: {
@@ -160,6 +165,7 @@ clientSchema.pre('save', function(next) {
 
 // Indexes for better query performance
 clientSchema.index({ name: 1 });
+clientSchema.index({ companyShortName: 1 });
 clientSchema.index({ 'erpDetails.erpName': 1 });
 clientSchema.index({ status: 1 });
 

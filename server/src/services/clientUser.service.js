@@ -24,12 +24,15 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
   if (currentUser.role === 'clientuser') {
     query.client = currentUser.client;
     query.role = 'clientuser';
-  } else if (currentUser.role === 'consultant' && currentUser.client) {
-    query.client = currentUser.client;
-  }
-  
-  if (currentUser.role === 'consultant') {
-    query.role = { $ne: 'superadmin' };
+  } else if (currentUser.role === 'consultant') {
+    // If a specific role was already specified, respect it unless it is superadmin
+    if (query.role) {
+      if (query.role === 'superadmin') {
+        query.role = { $in: [] };
+      }
+    } else {
+      query.role = { $ne: 'superadmin' };
+    }
   }
   
   if (search) {
@@ -60,9 +63,13 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
   if (currentUser.role === 'clientuser') {
     baseQuery.client = currentUser.client;
     baseQuery.role = 'clientuser';
-  } else if (currentUser.role === 'consultant' && currentUser.client) {
-    baseQuery.client = currentUser.client;
-    baseQuery.role = { $ne: 'superadmin' };
+  } else if (currentUser.role === 'consultant') {
+    if (clientId && clientId !== 'all') {
+      baseQuery.client = clientId;
+    }
+    if (!baseQuery.role) {
+      baseQuery.role = { $ne: 'superadmin' };
+    }
   }
   
   const stats = {
@@ -71,11 +78,11 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
     suspendedClientUsers: await ClientUser.countDocuments({ ...baseQuery, status: 'suspended' }),
     frozenClientUsers: await ClientUser.countDocuments({ ...baseQuery, status: 'frozen' }),
     clientuserRole: await ClientUser.countDocuments({ 
-      ...((currentUser.role === 'consultant' || currentUser.role === 'clientuser') && currentUser.client ? { client: currentUser.client } : {}),
+      ...((currentUser.role === 'clientuser') && currentUser.client ? { client: currentUser.client } : {}),
       role: 'clientuser' 
     }),
     consultantRole: await ClientUser.countDocuments({ 
-      ...((currentUser.role === 'consultant' || currentUser.role === 'clientuser') && currentUser.client ? { client: currentUser.client } : {}),
+      ...((currentUser.role === 'clientuser') && currentUser.client ? { client: currentUser.client } : {}),
       role: 'consultant' 
     }),
     ...(currentUser.role === 'superadmin' ? {
@@ -84,9 +91,9 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
   };
   
   let clients = [];
-  if (currentUser.role === 'superadmin') {
+  if (currentUser.role === 'superadmin' || currentUser.role === 'consultant') {
     clients = await Client.find().select('name').sort({ name: 1 });
-  } else if (currentUser.role === 'consultant' && currentUser.client) {
+  } else if (currentUser.role === 'clientuser' && currentUser.client) {
     const client = await Client.findById(currentUser.client).select('name');
     if (client) clients = [client];
   }
@@ -99,7 +106,7 @@ export const getAllUsers = async (currentUser, { status, role, clientId, search,
   };
 };
 
-export const getUsersByRole = async (currentUser, targetRole, { status, search, page = 1, limit = 1000 }) => {
+export const getUsersByRole = async (currentUser, targetRole, { status, clientId, search, page = 1, limit = 1000 }) => {
   if (!['clientuser', 'consultant', 'superadmin'].includes(targetRole)) {
     throw new Error('Invalid role specified');
   }
@@ -116,8 +123,10 @@ export const getUsersByRole = async (currentUser, targetRole, { status, search, 
   
   const query = { role: targetRole };
   
-  if (targetRole === 'clientuser' && currentUser.client) {
+  if (currentUser.role === 'clientuser') {
     query.client = currentUser.client;
+  } else if (clientId && clientId !== 'all') {
+    query.client = clientId;
   }
   
   if (status && status !== 'all') query.status = status;

@@ -86,6 +86,7 @@ export const sendTicketStatusUpdatedEmail = async (to, cc, ticket, oldStatus, ne
       subject : `[Status Update] Ticket ${ticket.ticketNumber} → ${formattedNew}`,
       html,
       eventType: 'ticket_status_updated',
+      ticket,
     });
     console.log(`✅ TICKET STATUS UPDATED EMAIL SENT TO: ${to}`);
   } catch (err) {

@@ -17,6 +17,7 @@ export {
   sendTicketStatusUpdatedEmail,
   sendCcAddedNotificationEmail,
   sendNewMessageNotificationEmail,
+  notifyConversationParticipants,
   sendWelcomeCredentialsEmail,
   sendTemporaryPasswordEmail,
 } from '../email/index.js';

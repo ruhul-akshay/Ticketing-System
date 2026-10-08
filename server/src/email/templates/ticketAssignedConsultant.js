@@ -101,6 +101,7 @@ export const sendTicketAssignedConsultantEmail = async (
       subject  : `🚨 Assigned Ticket [${ticket.ticketNumber}] — Assigned to You | ${ticket.title}`,
       html,
       eventType: 'ticket_assigned',
+      ticket,
     });
     console.log(`✅ TICKET ASSIGNED (CONSULTANT) EMAIL SENT TO: ${to}`);
   } catch (err) {

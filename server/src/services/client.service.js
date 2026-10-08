@@ -226,6 +226,7 @@ export const getClientDetails = async (id) => {
 export const createClient = async (currentUser, data) => {
   const {
     name,
+    companyShortName,
     domain,
     contactPerson,
     contactEmail,
@@ -271,11 +272,15 @@ export const createClient = async (currentUser, data) => {
     }
   }
 
-  const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+  const { generateClientInitials, generateCompanyShortName } = await import('../utils/ticket.helpers.js');
   const initials = await generateClientInitials(name);
+  const resolvedShortName = (companyShortName && companyShortName.trim()) 
+    ? companyShortName.trim() 
+    : generateCompanyShortName(name);
 
   const client = new Client({
     name: name.trim(),
+    companyShortName: resolvedShortName,
     domain: domain.toLowerCase().trim(),
     contactPerson: contactPerson?.trim(),
     contactEmail: contactEmail?.toLowerCase().trim(),
@@ -301,6 +306,7 @@ export const createClient = async (currentUser, data) => {
 export const updateClientPut = async (currentUser, id, data) => {
   const {
     name,
+    companyShortName,
     contactPerson,
     contactEmail,
     contactPhone,
@@ -315,11 +321,19 @@ export const updateClientPut = async (currentUser, id, data) => {
   }
 
   if (name !== undefined && name.trim() !== client.name) {
-    const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+    const { generateClientInitials, generateCompanyShortName } = await import('../utils/ticket.helpers.js');
     client.name = name.trim();
     client.initials = await generateClientInitials(name, client._id);
+    if (!client.companyShortName && companyShortName === undefined) {
+      client.companyShortName = generateCompanyShortName(name);
+    }
   } else if (name !== undefined) {
     client.name = name.trim();
+  }
+
+  if (companyShortName !== undefined) {
+    client.companyShortName = companyShortName ? String(companyShortName).trim() : '';
+    client.markModified('companyShortName');
   }
   if (contactPerson !== undefined) client.contactPerson = contactPerson?.trim();
   if (contactEmail !== undefined) client.contactEmail = contactEmail?.toLowerCase().trim();
@@ -401,6 +415,7 @@ export const updateClientPut = async (currentUser, id, data) => {
 export const updateClientPatch = async (currentUser, id, data) => {
   const {
     name,
+    companyShortName,
     contactPerson,
     contactEmail,
     contactPhone,
@@ -415,11 +430,19 @@ export const updateClientPatch = async (currentUser, id, data) => {
   }
 
   if (name !== undefined && name !== null && name.trim() !== client.name) {
-    const { generateClientInitials } = await import('../utils/ticket.helpers.js');
+    const { generateClientInitials, generateCompanyShortName } = await import('../utils/ticket.helpers.js');
     client.name = name.trim();
     client.initials = await generateClientInitials(name, client._id);
+    if (!client.companyShortName && companyShortName === undefined) {
+      client.companyShortName = generateCompanyShortName(name);
+    }
   } else if (name !== undefined && name !== null) {
     client.name = name.trim();
+  }
+
+  if (companyShortName !== undefined) {
+    client.companyShortName = companyShortName ? String(companyShortName).trim() : '';
+    client.markModified('companyShortName');
   }
   if (contactPerson !== undefined && contactPerson !== null) client.contactPerson = contactPerson.trim();
   if (contactEmail !== undefined && contactEmail !== null) client.contactEmail = contactEmail.toLowerCase().trim();

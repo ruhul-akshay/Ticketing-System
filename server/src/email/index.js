@@ -13,6 +13,6 @@ export { sendTicketForwardedConsultantEmail } from './templates/ticketForwardedC
 export { sendTicketAssignedConsultantEmail }  from './templates/ticketAssignedConsultant.js';
 export { sendTicketStatusUpdatedEmail }    from './templates/ticketStatusUpdated.js';
 export { sendCcAddedNotificationEmail }    from './templates/ccAdded.js';
-export { sendNewMessageNotificationEmail } from './templates/newMessage.js';
+export { sendNewMessageNotificationEmail, notifyConversationParticipants } from './templates/newMessage.js';
 export { sendWelcomeCredentialsEmail }     from './templates/welcomeCredentials.js';
 export { sendTemporaryPasswordEmail }      from './templates/temporaryPassword.js';

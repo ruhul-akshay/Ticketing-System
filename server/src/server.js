@@ -31,12 +31,13 @@ const startServer = async () => {
     await ensureUploadsDir();
     await connectDB();
 
-    // Run client-initials migration (non-fatal if it fails)
+    // Run client-initials & client short-name migrations (non-fatal if they fail)
     try {
-      const { migrateClientInitials } = await import('./utils/ticket.helpers.js');
+      const { migrateClientInitials, migrateClientShortNames } = await import('./utils/ticket.helpers.js');
       await migrateClientInitials();
+      await migrateClientShortNames();
     } catch (migErr) {
-      logger.error(`Client initials migration failed: ${migErr.message}`);
+      logger.error(`Client migration failed: ${migErr.message}`);
     }
 
     httpServer = app.listen(PORT, '0.0.0.0', () => {

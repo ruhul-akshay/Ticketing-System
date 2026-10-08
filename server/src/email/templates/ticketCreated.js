@@ -173,7 +173,8 @@ export const sendTicketCreatedEmail = async (to, ticket, cc = null, holidayReaso
       ...(cc ? { cc } : {}),
       subject,
       html,
-      eventType: 'ticket_created'
+      eventType: 'ticket_created',
+      ticket,
     });
     console.log(`✅ TICKET CREATED EMAIL SENT TO: ${to}`);
   } catch (error) {

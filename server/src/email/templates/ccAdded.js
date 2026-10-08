@@ -112,6 +112,7 @@ export const sendCcAddedNotificationEmail = async (to, ticket, addedBy) => {
         subject,
         html,
         eventType: 'cc_added',
+        ticket,
       });
       console.log(`✅ CC ADDED NOTIFICATION EMAIL SENT TO: ${email}`);
     } catch (err) {

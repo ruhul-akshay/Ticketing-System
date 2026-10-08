@@ -102,6 +102,7 @@ export const sendTicketForwardedConsultantEmail = async (
       subject  : `🚨 Forwarded Ticket [${ticket.ticketNumber}] — Assigned to You | ${ticket.title}`,
       html,
       eventType: 'ticket_assigned',
+      ticket,
     });
     console.log(`✅ TICKET FORWARDED (CONSULTANT) EMAIL SENT → ${to}`);
   } catch (err) {

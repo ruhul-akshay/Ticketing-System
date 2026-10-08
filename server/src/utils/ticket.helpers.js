@@ -123,6 +123,56 @@ export const migrateClientInitials = async () => {
   }
 };
 
+export const generateCompanyShortName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+
+  // 1. Remove text inside brackets/parentheses e.g. (India), [HQ]
+  let cleaned = name.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, ' ');
+
+  // 2. Remove common legal entity suffixes and generic corporate words
+  const stopWords = [
+    'pvt\\.?\\s*ltd\\.?', 'private\\s*limited', 'pvt\\.?', 'ltd\\.?', 'limited',
+    'inc\\.?', 'incorporated', 'llc', 'llp', 'corp\\.?', 'corporation',
+    'co\\.?', 'company', 'enterprises?', 'group', 'industries',
+    'technologies', 'technology', 'tech', 'solutions', 'services', 'systems'
+  ];
+  const suffixPattern = new RegExp(`\\b(${stopWords.join('|')})\\b`, 'gi');
+  cleaned = cleaned.replace(suffixPattern, ' ');
+
+  // 3. Remove punctuation / special characters (keep alphanumeric and hyphen)
+  cleaned = cleaned.replace(/[^a-zA-Z0-9\s-]/g, ' ').trim();
+
+  // 4. Split into words
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return name.trim().split(/\s+/)[0] || '';
+  }
+
+  // If first word is "The", use second word if available
+  if (words.length > 1 && /^the$/i.test(words[0])) {
+    return words[1];
+  }
+
+  return words[0];
+};
+
+export const migrateClientShortNames = async () => {
+  console.log('🔄 Running Client Short Name Migration...');
+  const clients = await Client.find({ 
+    $or: [
+      { companyShortName: { $exists: false } }, 
+      { companyShortName: null }, 
+      { companyShortName: '' }
+    ] 
+  });
+  for (const client of clients) {
+    const shortName = generateCompanyShortName(client.name);
+    client.companyShortName = shortName;
+    await client.save();
+    console.log(`✅ Set companyShortName for Client "${client.name}" to "${shortName}"`);
+  }
+};
+
 export const generateTicketNumber = async (departmentId, clientId, isInternal = false) => {
   const now = new Date();
   const yy = now.getFullYear().toString().slice(-2);

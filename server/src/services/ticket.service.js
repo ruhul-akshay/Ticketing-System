@@ -12,14 +12,18 @@ import { logger }   from '../utils/logger.js';
 
 const checkConsultantOnLeave = async (consultantId) => {
   const today = new Date();
+  // Midnight UTC for today — compare as date-only
   const midnight = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0));
-  const consultant = await ClientUser.findOne({
-    _id: consultantId,
-    leaveFrom: { $lte: midnight },
-    leaveTo: { $gte: midnight }
+  // LeaveRequest stores the consultant as `user` and has startDate / endDate fields
+  const leaveRecord = await LeaveRequest.findOne({
+    user:      consultantId,
+    startDate: { $lte: midnight },
+    endDate:   { $gte: midnight },
+    status:    'approved'
   });
-  return !!consultant;
+  return !!leaveRecord;
 };
+
 
 const checkClientUserAccess = async (currentUser, ticket) => {
   if (currentUser.role !== 'clientuser') return true;
@@ -120,6 +124,7 @@ import {
   sendTicketResolvedEmail,
   sendTicketStatusUpdatedEmail,
   sendNewMessageNotificationEmail,
+  notifyConversationParticipants,
   sendTicketAssignedConsultantEmail,
   sendTicketForwardedUserEmail,
   sendTicketForwardedConsultantEmail,
@@ -170,16 +175,21 @@ export const getTickets = async (currentUser) => {
     if (currentUser.isPrimaryContact && currentUser.client) {
       const teamUserIds = await ClientUser.find({ client: currentUser.client }).distinct('_id');
       query.$or = [
-        { createdBy: { $in: teamUserIds } },
-        { client: currentUser.client, isVisibleToClient: true }
+        // Only show non-internal tickets created by anyone on this client's team
+        { isInternal: false, createdBy: { $in: teamUserIds } },
+        // Or non-internal tickets explicitly shared with this client
+        { isInternal: false, client: currentUser.client, isVisibleToClient: true }
       ];
     } else {
       query.$or = [
-        { createdBy: currentUser._id },
-        { clientUser: currentUser._id, isVisibleToClient: true }
+        // Only show non-internal tickets the user created themselves
+        { isInternal: false, createdBy: currentUser._id },
+        // Or non-internal tickets explicitly shared with this specific client user
+        { isInternal: false, clientUser: currentUser._id, isVisibleToClient: true }
       ];
     }
   }
+
 
   if (currentUser.role === 'consultant' || currentUser.role === 'admin') {
     query.$or = [
@@ -419,8 +429,14 @@ export const createTicket = async (currentUser, data, files = {}) => {
   const creatorUserId = ['consultant', 'clientuser', 'superadmin'].includes(currentUser.role) && data.createdBy ? data.createdBy : currentUser._id;
   const creatorUser = await ClientUser.findById(creatorUserId).populate('client');
 
+  // Normalize booleans — FormData sends them as strings ("true"/"false").
+  // Using !! on a non-empty string always gives true, so "false" would incorrectly
+  // become true. Explicit comparison is the safe approach.
+  const internalFlag = isInternal === true || isInternal === 'true';
+  const visibleFlag  = isVisibleToClient === true || isVisibleToClient === 'true';
+
   const clientId = creatorUser?.client?._id || creatorUser?.client || null;
-  const ticketNumber = await generateTicketNumber(departmentId, clientId, !!isInternal);
+  const ticketNumber = await generateTicketNumber(departmentId, clientId, internalFlag);
 
   const attachments         = processFiles(files.attachments);
   const supportingDocuments = processFiles(files.supportingDocuments);
@@ -471,7 +487,7 @@ export const createTicket = async (currentUser, data, files = {}) => {
     assignedConsultantsList = String(data.assignedConsultants).split(',').map(s => s.trim()).filter(Boolean);
   }
 
-  if (isInternal) {
+  if (internalFlag) {
     if (assignedConsultantsList.length > 0) {
       assignedTo = assignedConsultantsList[0];
       status = 'assigned';
@@ -527,14 +543,15 @@ export const createTicket = async (currentUser, data, files = {}) => {
       ? ccEmails.map(e => e.split(',')).flat().map(e => e.trim()).filter(Boolean) 
       : (ccEmails ? ccEmails.split(',').map(e => e.trim()).filter(Boolean) : []),
     erpIncidentType: erpIncidentType || null,
-    isInternal: !!isInternal,
-    isVisibleToClient: !!isVisibleToClient,
+    isInternal: internalFlag,
+    isVisibleToClient: visibleFlag,
     client: client || clientId || null,
     clientUser: clientUser || (creatorUser?.role === 'clientuser' ? creatorUserId : null)
   });
 
   await ticket.populate([
     { path: 'createdBy', populate: { path: 'client' } },
+    { path: 'client' },
     { path: 'assignedTo' },
     { path: 'assignedConsultants', select: 'name email role' },
     { path: 'department' }
@@ -792,7 +809,8 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
   if (newCcEmails.length > 0) {
     // Fetch a populated version of the ticket for the email template
     Ticket.findById(ticket._id)
-      .populate({ path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } })
+      .populate({ path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name companyShortName' } })
+      .populate({ path: 'client', select: 'name initials companyShortName domain' })
       .populate({ path: 'department', select: 'name' })
       .then(populatedTicket => {
         sendCcAddedNotificationEmail(newCcEmails, populatedTicket || ticket, currentUser)
@@ -804,7 +822,8 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
   if (statusChanged) {
     try {
       const updatedTicket = await Ticket.findById(ticket._id)
-        .populate({ path: 'createdBy', select: 'name email client', populate: { path: 'client', select: 'name contactEmail' } })
+        .populate({ path: 'createdBy', select: 'name email client', populate: { path: 'client', select: 'name contactEmail companyShortName' } })
+        .populate({ path: 'client', select: 'name initials companyShortName domain' })
         .populate({ path: 'assignedTo', select: 'name email role' });
 
       if (updatedTicket.createdBy?.email) {
@@ -835,81 +854,18 @@ export const updateTicket = async (currentUser, id, data, files = {}) => {
   }
 
   if (remarks && typeof remarks === 'string' && remarks.trim().length > 0) {
-    const updatedTicket = await Ticket.findById(ticket._id)
-      .populate({ path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name contactEmail' } })
-      .populate({ path: 'assignedTo', select: 'name email role' })
-      .populate({ path: 'department', select: 'name' });
-
-    const senderRole = currentUser.role?.toLowerCase() || '';
-    const isSenderAdmin = ['consultant', 'clientuser', 'superadmin'].includes(senderRole);
-
-    if (isSenderAdmin) {
-      if (updatedTicket.createdBy?.email) {
-        sendNewMessageNotificationEmail(
-          updatedTicket.createdBy.email,
-          updatedTicket,
-          remarks,
-          currentUser,
-          'clientuser'
-        ).catch(err => console.error('CONVERSATION EMAIL TO CLIENT USER FAILED:', err.message));
-      }
-    } else {
-      if (updatedTicket.assignedTo?.email) {
-        sendNewMessageNotificationEmail(
-          updatedTicket.assignedTo.email,
-          updatedTicket,
-          remarks,
-          currentUser,
-          updatedTicket.assignedTo.role || 'consultant'
-        ).catch(err => console.error('CONVERSATION EMAIL TO CONSULTANT FAILED:', err.message));
-      } else {
-        try {
-          const recipients = [];
-          if (updatedTicket.department) {
-            const consultantProfiles = await ConsultantProfile.find({
-              department: updatedTicket.department._id || updatedTicket.department
-            }).populate('user', 'email role');
-            consultantProfiles.forEach(p => {
-              if (p.user?.email) {
-                recipients.push({ email: p.user.email, role: p.user.role || 'consultant' });
-              }
-            });
-          }
-          const superAdmins = await ClientUser.find({ role: 'superadmin', status: 'active' });
-          superAdmins.forEach(u => {
-            if (u.email) {
-              recipients.push({ email: u.email, role: 'superadmin' });
-            }
-          });
-
-          const uniqueRecipients = [];
-          const seenEmails = new Set();
-          for (const r of recipients) {
-            if (!seenEmails.has(r.email)) {
-              seenEmails.add(r.email);
-              uniqueRecipients.push(r);
-            }
-          }
-
-          for (const recipient of uniqueRecipients) {
-            sendNewMessageNotificationEmail(
-              recipient.email,
-              updatedTicket,
-              remarks,
-              currentUser,
-              recipient.role
-            ).catch(err => console.error(`CONVERSATION EMAIL FAILED:`, err.message));
-          }
-        } catch (err) {
-          console.error('Failed to notify admins:', err);
-        }
-      }
-    }
+    notifyConversationParticipants({
+      ticket,
+      messageText: remarks.trim(),
+      sender: currentUser,
+      isInternal: false
+    }).catch(err => console.error('STATUS CONVERSATION EMAIL NOTIFICATION ERROR:', err.message));
   }
   
   return await Ticket.findById(ticket._id).populate([
     { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } },
     { path: 'assignedTo', select: 'name email role' },
+    { path: 'assignedConsultants', select: 'name email role' },
     { path: 'solvedBy', select: 'name email' },
     { path: 'department', select: 'name description categories' },
     { path: 'remarks.addedBy', select: 'name email role' },
@@ -1233,78 +1189,27 @@ export const addRemarkOnly = async (currentUser, id, text, isInternal = false) =
 
   await ticket.save();
 
+  const isInternalFlag = isInternal === 'true' || isInternal === true;
+
+  notifyConversationParticipants({
+    ticket,
+    messageText: text.trim(),
+    sender: currentUser,
+    isInternal: isInternalFlag
+  }).catch(err => console.error('CONVERSATION EMAIL NOTIFICATION ERROR:', err.message));
+
   const updatedTicket = await Ticket.findById(ticket._id)
-    .populate({ path: 'createdBy', select: 'name email client', populate: { path: 'client', select: 'name contactEmail' } })
+    .populate({ path: 'createdBy', select: 'name email role client', populate: { path: 'client', select: 'name contactEmail companyShortName' } })
     .populate({ path: 'assignedTo', select: 'name email role' })
-    .populate({ path: 'department', select: 'name' });
+    .populate({ path: 'department', select: 'name' })
+    .populate({ path: 'remarks.addedBy', select: 'name email role' });
 
-  const senderRole = currentUser.role?.toLowerCase() || '';
-  const isSenderAdmin = ['consultant', 'clientuser', 'superadmin'].includes(senderRole);
+  return updatedTicket;
 
-  if (isSenderAdmin) {
-    if (updatedTicket.createdBy?.email && !isInternal) {
-      sendNewMessageNotificationEmail(
-        updatedTicket.createdBy.email,
-        updatedTicket,
-        text,
-        currentUser,
-        'clientuser'
-      ).catch(err => console.error('CONVERSATION EMAIL TO CLIENT USER FAILED:', err.message));
-    }
-  } else {
-    if (updatedTicket.assignedTo?.email) {
-      sendNewMessageNotificationEmail(
-        updatedTicket.assignedTo.email,
-        updatedTicket,
-        text,
-        currentUser,
-        updatedTicket.assignedTo.role || 'consultant'
-      ).catch(err => console.error('CONVERSATION EMAIL TO CONSULTANT FAILED:', err.message));
-    } else {
-      try {
-        const recipients = [];
-        if (updatedTicket.department) {
-          const consultantProfiles = await ConsultantProfile.find({
-            department: updatedTicket.department._id || updatedTicket.department
-          }).populate('user', 'email role');
-          consultantProfiles.forEach(p => {
-            if (p.user?.email) {
-              recipients.push({ email: p.user.email, role: p.user.role || 'consultant' });
-            }
-          });
-        }
-        const superAdmins = await ClientUser.find({ role: 'superadmin', status: 'active' });
-        superAdmins.forEach(u => {
-          if (u.email) {
-            recipients.push({ email: u.email, role: 'superadmin' });
-          }
-        });
-
-        const uniqueRecipients = [];
-        const seenEmails = new Set();
-        for (const r of recipients) {
-          if (!seenEmails.has(r.email)) {
-            seenEmails.add(r.email);
-            uniqueRecipients.push(r);
-          }
-        }
-
-        for (const recipient of uniqueRecipients) {
-          sendNewMessageNotificationEmail(
-            recipient.email,
-            updatedTicket,
-            text,
-            currentUser,
-            recipient.role
-          ).catch(err => console.error(`CONVERSATION EMAIL FAILED:`, err.message));
-        }
-      } catch (err) {
-        console.error('Failed to notify admins:', err);
-      }
-    }
-  }
-
-  return ticket;
+  // Return the populated document — it was already fetched above for email sending.
+  // Returning the raw `ticket` Mongoose doc would give the client unpopulated IDs
+  // for remarks.addedBy, assignedTo, etc.
+  return updatedTicket;
 };
 
 export const assignTicket = async (currentUser, id, consultantId, remarks, ccConsultantIds = []) => {
@@ -1331,7 +1236,7 @@ export const assignTicket = async (currentUser, id, consultantId, remarks, ccCon
 
   ticket.assignedTo = targetConsultant._id;
   ticket.status = 'assigned';
-  ticket.openedBy = (ticket.openedBy || []).filter(id => id && String(id) !== String(targetConsultant._id));
+  ticket.openedBy = (ticket.openedBy || []).filter(uid => uid && String(uid) !== String(targetConsultant._id));
   if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
   ticket.assignmentHistory.push({
     action: 'assign',
@@ -1344,7 +1249,9 @@ export const assignTicket = async (currentUser, id, consultantId, remarks, ccCon
   await ticket.save();
 
   const populated = await Ticket.findById(ticket._id).populate([
-    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name' } },
+    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name companyShortName' } },
+    { path: 'clientUser', select: 'name email clientName client', populate: { path: 'client', select: 'name companyShortName' } },
+    { path: 'client', select: 'name initials companyShortName domain' },
     { path: 'assignedTo', select: 'name email role' },
     { path: 'solvedBy', select: 'name email' },
     { path: 'department', select: 'name description categories' },
@@ -1410,7 +1317,7 @@ export const forwardTicket = async (currentUser, id, consultantId, remarks, ccCo
 
   ticket.assignedTo = targetConsultant._id;
   ticket.status = 'assigned';
-  ticket.openedBy = (ticket.openedBy || []).filter(id => id && String(id) !== String(targetConsultant._id));
+  ticket.openedBy = (ticket.openedBy || []).filter(uid => uid && String(uid) !== String(targetConsultant._id));
   if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
   ticket.assignmentHistory.push({
     action: 'forward',
@@ -1425,7 +1332,9 @@ export const forwardTicket = async (currentUser, id, consultantId, remarks, ccCo
   await ticket.save();
 
   const populated = await Ticket.findById(ticket._id).populate([
-    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name contactEmail contactPerson' } },
+    { path: 'createdBy', select: 'name email clientName client', populate: { path: 'client', select: 'name contactEmail contactPerson companyShortName' } },
+    { path: 'clientUser', select: 'name email clientName client', populate: { path: 'client', select: 'name contactEmail contactPerson companyShortName' } },
+    { path: 'client', select: 'name initials companyShortName domain' },
     { path: 'assignedTo', select: 'name email role' },
     { path: 'solvedBy', select: 'name email' },
     { path: 'department', select: 'name description categories' },

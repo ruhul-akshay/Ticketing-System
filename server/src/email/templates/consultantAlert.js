@@ -121,7 +121,7 @@ export const sendConsultantTicketAlertEmail = async (ticket) => {
       `${ticket.department?.name || 'Support'}`;
 
     /* ── 7. Send ─────────────────────────────────────────────────── */
-    await sendMail({ to: recipients, subject, html, eventType: 'ticket_created' });
+    await sendMail({ to: recipients, subject, html, eventType: 'ticket_created', ticket });
 
     console.log(`✅ CONSULTANT ALERT EMAIL SENT TO: ${recipients.join(', ')}`);
   } catch (err) {

@@ -91,7 +91,7 @@ export const sendTicketResolvedEmail = async (to, ticket) => {
 
   // FIX: added try/catch — previously an SMTP failure would propagate uncaught
   try {
-    await sendMail({ to, subject, html, eventType: 'ticket_closed' });
+    await sendMail({ to, subject, html, eventType: 'ticket_closed', ticket });
     console.log(`✅ TICKET RESOLVED EMAIL SENT TO: ${to}`);
   } catch (err) {
     console.error('❌ TICKET RESOLVED EMAIL FAILED:', err.message || err);
