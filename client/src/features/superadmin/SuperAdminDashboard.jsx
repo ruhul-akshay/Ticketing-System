@@ -7,6 +7,7 @@ import { useDepartmentStore } from '../../store/useDepartmentStore';
 import { useClientUserStore } from '../../store/useClientUserStore';
 import api from '../../api/mockAxios';
 import Badge from '../../components/ui/Badge';
+import TicketStatusBadge from '../../components/ui/TicketStatusBadge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { getStatusColor, getPriorityColor } from '../../utils/ticketHelpers';
 import { formatMinutesToHM as formatTime } from '../../utils/formatters';
@@ -124,7 +125,7 @@ export default function SuperAdminDashboard() {
         <motion.div onClick={() => navigate('/super-admin/tickets')} initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} transition={{delay:0.1}} className="bg-[#111620]/80 backdrop-blur-xl border border-white/5 p-6 rounded-3xl shadow-[0_4px_30px_rgba(0,0,0,0.3)] hover:-translate-y-1 transition-all group overflow-hidden relative cursor-pointer">
            <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-125 transition-transform"><Ticket size={80}/></div>
            <div className="flex items-center justify-between mb-4 relative z-10">
-             <div className="w-12 h-12 bg-red-500/20 text-red-500 rounded-2xl flex items-center justify-center shadow-inner border border-red-500/20"><Ticket size={20}/></div>
+             <div className="w-12 h-12 bg-blue-500/20 text-blue-400 rounded-2xl flex items-center justify-center shadow-inner border border-blue-500/20"><Ticket size={20}/></div>
              <div className="text-right">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Open Tickets</span>
                 <span className="text-sm font-black text-yellow-400">{stats.openTickets}</span>
@@ -229,7 +230,7 @@ export default function SuperAdminDashboard() {
                         </div>
                      </div>
                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge color={getStatusColor(t.status)} size="sm">{t.status}</Badge>
+                        <TicketStatusBadge status={t.status} size="sm" />
                         <Badge color={getPriorityColor(t.priority)} size="sm">{t.priority}</Badge>
                      </div>
                   </div>
@@ -238,9 +239,9 @@ export default function SuperAdminDashboard() {
                )}
             </div>
             <div className="mt-6 pt-5 border-t border-white/5 grid grid-cols-2 gap-4">
-               <div onClick={() => navigate('/super-admin/tickets?status=open')} className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center shadow-inner cursor-pointer hover:bg-red-500/20 transition-colors">
-                  <div className="text-xl font-black text-red-500 mb-0.5">{stats.openTickets}</div>
-                  <div className="text-[9px] font-bold text-red-400 uppercase tracking-widest">Open Tickets</div>
+               <div onClick={() => navigate('/super-admin/tickets?status=open')} className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center shadow-inner cursor-pointer hover:bg-blue-500/20 transition-colors">
+                  <div className="text-xl font-black text-blue-500 mb-0.5">{stats.openTickets}</div>
+                  <div className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Open Tickets</div>
                </div>
                <div onClick={() => navigate('/super-admin/tickets?status=resolved')} className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center shadow-inner cursor-pointer hover:bg-emerald-500/20 transition-colors">
                   <div className="text-xl font-black text-emerald-400 mb-0.5">{stats.resolvedTickets}</div>

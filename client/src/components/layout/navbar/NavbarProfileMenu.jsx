@@ -11,7 +11,8 @@ import {
   DollarSign,
   FileText,
   Calendar,
-  Sliders
+  Sliders,
+  BarChart2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -45,6 +46,7 @@ export default function NavbarProfileMenu({ onOpenProfileModal }) {
   const displayName = user?.name || user?.fullName || 'User';
   const roleName = user?.role || 'Staff';
   const isSuperAdmin = user?.role === 'superadmin' || user?.role === 'Super Admin' || user?.role === 'admin';
+  const isConsultant = user?.role === 'consultant' || user?.role?.toLowerCase() === 'consultant';
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -112,6 +114,21 @@ export default function NavbarProfileMenu({ onOpenProfileModal }) {
                 <span>Dashboard Settings</span>
               </button>
 
+              {/* Reports for Consultant */}
+              {isConsultant && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate('/consultant/reports');
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <BarChart2 size={15} className="text-blue-500 shrink-0" />
+                  <span>Reports</span>
+                </button>
+              )}
+
               {/* Super Admin specific functions */}
               {isSuperAdmin && (
                 <>
@@ -152,6 +169,19 @@ export default function NavbarProfileMenu({ onOpenProfileModal }) {
                   >
                     <FileText size={15} className="text-rose-500 shrink-0" />
                     <span>System Reports</span>
+                  </button>
+
+                  {/* Consultant Reports */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      navigate('/consultant/reports');
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                  >
+                    <BarChart2 size={15} className="text-blue-500 shrink-0" />
+                    <span>Consultant Reports</span>
                   </button>
 
                   {/* 6. Holiday Master */}

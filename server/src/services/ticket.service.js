@@ -200,7 +200,8 @@ export const getTickets = async (currentUser) => {
       { 'assignmentHistory.assignedBy': currentUser._id },
       { 'assignmentHistory.forwardedBy': currentUser._id },
       { 'assignmentHistory.forwardedTo': currentUser._id },
-      { 'remarks.addedBy': currentUser._id }
+      { 'remarks.addedBy': currentUser._id },
+      { 'workLogs.addedBy': currentUser._id }
     ];
     if (currentUser.email) {
       query.$or.push({ ccEmails: currentUser.email });

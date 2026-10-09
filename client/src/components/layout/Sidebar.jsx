@@ -6,7 +6,7 @@ import {
   ClipboardList, BookOpen, Users, Shield, 
   Building2, Briefcase, Radio, GitFork, 
   PanelLeftClose, PanelLeftOpen, LogOut, Sun, Moon,
-  Download
+  Download, BarChart2
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore } from '../../store/useThemeStore';
@@ -42,6 +42,7 @@ const Sidebar = ({ isMobileMenuOpen, setIsMobileMenuOpen, isCollapsed, setIsColl
       { to: '/consultant', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
       { to: '/consultant/tickets', icon: <ClipboardList size={20} />, label: 'Assigned Tickets' },
       { to: '/create-internal-ticket', icon: <PlusCircle size={20} />, label: 'Internal Ticket' },
+      { to: '/consultant/reports', icon: <BarChart2 size={20} />, label: 'Reports' },
       { to: '/consultant/solutions', icon: <BookOpen size={20} />, label: 'Solutions' },
     ];
 

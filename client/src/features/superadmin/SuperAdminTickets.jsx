@@ -88,7 +88,7 @@ export default function SuperAdminTickets() {
   const stats = useMemo(() => {
     const total = tickets.length;
     const open = tickets.filter((t) =>
-      ['open', 'pending'].includes(t.status?.toLowerCase())
+      ['open', 'pending', 'assigned'].includes(t.status?.toLowerCase())
     ).length;
     const onHold = tickets.filter((t) =>
       ['on hold', 'hold'].includes(t.status?.toLowerCase())

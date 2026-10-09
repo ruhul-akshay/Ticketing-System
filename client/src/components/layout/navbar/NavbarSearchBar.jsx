@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, X, Ticket } from 'lucide-react';
-import { getPriorityBadgeClass, getStatusBadgeClass } from '../../../utils/ticketHelpers';
+import { getPriorityBadgeClass } from '../../../utils/ticketHelpers';
+import TicketStatusBadge from '../../ui/TicketStatusBadge';
 
 export default function NavbarSearchBar({
   tickets = [],
@@ -86,13 +87,7 @@ export default function NavbarSearchBar({
                       >
                         {t.priority}
                       </span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${getStatusBadgeClass(
-                          t.status
-                        )}`}
-                      >
-                        {t.status}
-                      </span>
+                      <TicketStatusBadge status={t.status} size="xs" />
                     </div>
                   </div>
                   <p className="text-xs font-bold text-slate-800 dark:text-white truncate">

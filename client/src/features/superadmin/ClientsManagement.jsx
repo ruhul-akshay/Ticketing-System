@@ -7,6 +7,24 @@ import Modal from '../../components/ui/Modal';
 import { Input } from '../../components/Input';
 import Badge from '../../components/ui/Badge';
 
+export const generateCompanyShortName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  let cleaned = name.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, ' ');
+  const stopWords = [
+    'pvt\\.?\\s*ltd\\.?', 'private\\s*limited', 'pvt\\.?', 'ltd\\.?', 'limited',
+    'inc\\.?', 'incorporated', 'llc', 'llp', 'corp\\.?', 'corporation',
+    'co\\.?', 'company', 'enterprises?', 'group', 'industries',
+    'technologies', 'technology', 'tech', 'solutions', 'services', 'systems'
+  ];
+  const suffixPattern = new RegExp(`\\b(${stopWords.join('|')})\\b`, 'gi');
+  cleaned = cleaned.replace(suffixPattern, ' ');
+  cleaned = cleaned.replace(/[^a-zA-Z0-9\s-]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return name.trim().split(/\s+/)[0] || '';
+  if (words.length > 1 && /^the$/i.test(words[0])) return words[1];
+  return words[0];
+};
+
 export default function ClientsManagement() {
   const { clients, stats, fetchClients, fetchStats, refreshAnalytics, isRefreshing, isLoading, addClient, updateClient, deleteClient, suspendClient } = useClientStore();
   
@@ -18,9 +36,10 @@ export default function ClientsManagement() {
   const [modalMode, setModalMode] = useState(null); // 'create' | 'edit' | 'delete' | null
   const [selectedClient, setSelectedClient] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isShortNameCustom, setIsShortNameCustom] = useState(false);
   
   const [formData, setFormData] = useState({
-    name: '', domain: '', contactPerson: '', contactEmail: '', contactPhone: '',
+    name: '', companyShortName: '', domain: '', contactPerson: '', contactEmail: '', contactPhone: '',
     erpDetails: {
       erpName: '', sapB1VersionType: '', sapB1VersionAndFP: '', sapLicenseAMC: '',
       sapSupportAMC: { status: '', fromDate: '', toDate: '' },
@@ -48,12 +67,21 @@ export default function ClientsManagement() {
   const toggleDetails = (id) => setShowDetails(p => ({ ...p, [id]: !p[id] }));
 
   const openCreateModal = () => {
-    setFormData({ name: '', domain: '', contactPerson: '', contactEmail: '', contactPhone: '', erpDetails: { erpName: '', sapB1VersionType: '', sapB1VersionAndFP: '', sapLicenseAMC: '', sapSupportAMC: { status: '', fromDate: '', toDate: '' }, sapSupportAMCType: '', sapSupportHourlyCap: '', erpIncidentTypes: [] } });
+    setIsShortNameCustom(false);
+    setFormData({
+      name: '', companyShortName: '', domain: '', contactPerson: '', contactEmail: '', contactPhone: '',
+      erpDetails: {
+        erpName: '', sapB1VersionType: '', sapB1VersionAndFP: '', sapLicenseAMC: '',
+        sapSupportAMC: { status: '', fromDate: '', toDate: '' },
+        sapSupportAMCType: '', sapSupportHourlyCap: '', erpIncidentTypes: []
+      }
+    });
     setModalMode('create');
   };
 
   const openEditModal = (c) => {
     setSelectedClient(c);
+    setIsShortNameCustom(Boolean(c.companyShortName));
     
     const erp = c.erpDetails 
       ? JSON.parse(JSON.stringify(c.erpDetails)) 
@@ -70,7 +98,12 @@ export default function ClientsManagement() {
     }
 
     setFormData({
-      name: c.name || '', domain: c.domain || '', contactPerson: c.contactPerson || '', contactEmail: c.contactEmail || '', contactPhone: c.contactPhone || '',
+      name: c.name || '',
+      companyShortName: c.companyShortName || generateCompanyShortName(c.name || ''),
+      domain: c.domain || '',
+      contactPerson: c.contactPerson || '',
+      contactEmail: c.contactEmail || '',
+      contactPhone: c.contactPhone || '',
       erpDetails: erp
     });
     setModalMode('edit');
@@ -94,8 +127,16 @@ export default function ClientsManagement() {
       }
       
       let res;
-      if (modalMode === 'create') res = await addClient(payload);
-      else res = await updateClient(selectedClient._id || selectedClient.id, payload);
+      if (modalMode === 'create') {
+        res = await addClient(payload);
+      } else {
+        const clientId = selectedClient._id || selectedClient.id;
+        res = await updateClient(clientId, payload);
+        if (res?.success) {
+          const updated = res.client || { ...selectedClient, ...payload };
+          setSelectedClient(updated);
+        }
+      }
 
       if (res?.success) setModalMode(null);
       else if (res) alert(res.message);
@@ -201,6 +242,11 @@ export default function ClientsManagement() {
                          <div>
                            <div className="font-black text-[16px] flex items-center gap-2 text-white group-hover:text-red-400 transition-colors">
                              {c.name}
+                             {(c.companyShortName || generateCompanyShortName(c.name)) && (
+                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/10 tracking-wide font-mono">
+                                 {c.companyShortName || generateCompanyShortName(c.name)}
+                               </span>
+                             )}
                              {c.isNewClient && <Badge color="blue" size="sm">NEW</Badge>}
                              {c.erpDetails?.sapSupportAMCType === 'Limited' && (c.erpDetails?.sapSupportHourlyCap || 0) <= 5 && (
                                <Badge color="red" size="sm" className="animate-pulse">LOW BALANCE</Badge>
@@ -382,9 +428,36 @@ export default function ClientsManagement() {
        {/* Form Modal (Create / Edit) */}
       <Modal isOpen={modalMode === 'create' || modalMode === 'edit'} onClose={() => setModalMode(null)} title={modalMode === 'create' ? "Create New Client" : "Edit Client"} size="xl">
         <form onSubmit={submitForm} className="space-y-6">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <Input label="Client Name *" value={formData.name} onChange={e => setFormData(p=>({...p, name: e.target.value}))} required />
-             <Input label="Domain *" value={formData.domain} onChange={e => setFormData(p=>({...p, domain: e.target.value}))} />
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <Input
+               label="Client Name *"
+               value={formData.name}
+               onChange={e => {
+                 const newName = e.target.value;
+                 setFormData(p => ({
+                   ...p,
+                   name: newName,
+                   companyShortName: isShortNameCustom ? p.companyShortName : generateCompanyShortName(newName)
+                 }));
+               }}
+               required
+               placeholder="e.g. Fristam Pumps"
+             />
+             <Input
+               label="Company Short Name"
+               value={formData.companyShortName}
+               onChange={e => {
+                 setIsShortNameCustom(true);
+                 setFormData(p => ({ ...p, companyShortName: e.target.value }));
+               }}
+               placeholder="e.g. Fristam"
+             />
+             <Input
+               label="Domain *"
+               value={formData.domain}
+               onChange={e => setFormData(p=>({...p, domain: e.target.value}))}
+               placeholder="e.g. fristam.com"
+             />
            </div>
            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
              <Input label="Contact Person" value={formData.contactPerson} onChange={e => setFormData(p=>({...p, contactPerson: e.target.value}))} />
@@ -560,6 +633,11 @@ export default function ClientsManagement() {
                <div>
                  <h3 className="text-xl font-black text-slate-950 dark:text-white flex items-center gap-2">
                    {selectedClient.name}
+                   {(selectedClient.companyShortName || generateCompanyShortName(selectedClient.name)) && (
+                     <span className="text-[12px] font-bold px-2.5 py-0.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 font-mono">
+                       {selectedClient.companyShortName || generateCompanyShortName(selectedClient.name)}
+                     </span>
+                   )}
                    {selectedClient.isNewClient && <Badge color="blue" size="sm">NEW</Badge>}
                  </h3>
                  <p className="text-sm text-slate-505 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
@@ -593,6 +671,14 @@ export default function ClientsManagement() {
                  <div className="space-y-1">
                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Full Name</span>
                    <div className="font-semibold text-slate-850 dark:text-white">{selectedClient.contactPerson || 'N/A'}</div>
+                 </div>
+                 <div className="space-y-1">
+                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Company Short Name</span>
+                   <div className="font-semibold text-slate-850 dark:text-white flex items-center gap-2">
+                     <span className="px-2 py-0.5 rounded bg-red-500/10 text-red-500 dark:text-red-400 font-mono font-bold text-xs">
+                       {selectedClient.companyShortName || generateCompanyShortName(selectedClient.name) || 'N/A'}
+                     </span>
+                   </div>
                  </div>
                  <div className="space-y-1">
                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Phone Number</span>
@@ -728,7 +814,7 @@ export default function ClientsManagement() {
              {/* Footer Actions */}
              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
                <Button variant="ghost" onClick={() => setModalMode(null)}>Close Profile</Button>
-               <Button variant="primary" onClick={() => setModalMode('edit')} icon={Edit2}>Edit Client</Button>
+               <Button variant="primary" onClick={() => openEditModal(selectedClient)} icon={Edit2}>Edit Client</Button>
              </div>
            </div>
          )}

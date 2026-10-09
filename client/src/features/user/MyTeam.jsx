@@ -6,6 +6,7 @@ import ManageClientUserModal from '../../components/ui/ManageClientUserModal';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTicketStore } from '../../store/useTicketStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
+import TicketStatusBadge from '../../components/ui/TicketStatusBadge';
 import Badge from '../../components/ui/Badge';
 
 export default function MyTeam() {
@@ -326,7 +327,7 @@ export default function MyTeam() {
                         </td>
                         <td className="p-4 align-middle">
                           <div className="flex flex-col gap-1.5 items-start">
-                            <Badge color={getStatusColor(t.status)} size="xs">{t.status}</Badge>
+                            <TicketStatusBadge status={t.status} size="xs" />
                             <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
                               ● {t.priority}
                             </span>

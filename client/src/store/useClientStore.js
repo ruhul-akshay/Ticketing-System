@@ -68,10 +68,11 @@ export const useClientStore = create((set, get) => ({
     try {
       const response = await api.post('/clients', clientData);
       if (response.data && response.data.success) {
-        await get().fetchClients();
+        set({ lastFetched: null, _fetchPromise: null });
+        await get().fetchClients({}, { force: true });
         await get().fetchStats();
         set({ isLoading: false });
-        return { success: true };
+        return { success: true, client: response.data.client };
       }
       return { success: false, message: 'Unknown error' };
     } catch (error) {
@@ -87,10 +88,20 @@ export const useClientStore = create((set, get) => ({
     try {
       const response = await api.put(`/clients/${id}`, clientData);
       if (response.data && response.data.success) {
-        await get().fetchClients();
+        const updated = response.data.client || clientData;
+        set(state => ({
+          clients: state.clients.map(c =>
+            (String(c._id) === String(id) || String(c.id) === String(id))
+              ? { ...c, ...updated }
+              : c
+          ),
+          lastFetched: null,
+          _fetchPromise: null
+        }));
+        await get().fetchClients({}, { force: true });
         await get().fetchStats();
         set({ isLoading: false });
-        return { success: true };
+        return { success: true, client: updated };
       }
       return { success: false, message: 'Unknown error' };
     } catch (error) {
@@ -105,7 +116,8 @@ export const useClientStore = create((set, get) => ({
     set({ isRefreshing: true, error: null });
     try {
       await api.post('/clients/refresh');
-      await get().fetchClients();
+      set({ lastFetched: null, _fetchPromise: null });
+      await get().fetchClients({}, { force: true });
       await get().fetchStats();
       set({ isRefreshing: false });
     } catch (error) {
@@ -119,7 +131,8 @@ export const useClientStore = create((set, get) => ({
     try {
       const response = await api.post(`/clients/${id}/renew`, renewalData);
       if (response.data && response.data.success) {
-        await get().fetchClients();
+        set({ lastFetched: null, _fetchPromise: null });
+        await get().fetchClients({}, { force: true });
         await get().fetchStats();
         set({ isLoading: false });
         return { success: true };
@@ -137,9 +150,12 @@ export const useClientStore = create((set, get) => ({
     try {
       const res = await api.delete(`/clients/${id}`);
       if (res.data.success) {
-        // Invalidate cache so the next fetch will be fresh
-        set({ lastFetched: null });
-        await get().fetchClients({ force: true });
+        set(state => ({
+          clients: state.clients.filter(c => String(c._id) !== String(id) && String(c.id) !== String(id)),
+          lastFetched: null,
+          _fetchPromise: null
+        }));
+        await get().fetchClients({}, { force: true });
         await get().fetchStats();
         return { success: true };
       }
@@ -149,7 +165,6 @@ export const useClientStore = create((set, get) => ({
         error.response?.data?.message ||
         'Delete failed. Ensure there are no active employees under this client.';
       console.error('[Clients] Delete failed:', error);
-      // Return the error instead of calling alert() which blocks the browser thread
       return { success: false, message: msg };
     }
   },
@@ -158,7 +173,8 @@ export const useClientStore = create((set, get) => ({
     try {
       const res = await api.patch(`/clients/${id}`, { status: 'suspended' });
       if(res.data.success) {
-        await get().fetchClients();
+        set({ lastFetched: null, _fetchPromise: null });
+        await get().fetchClients({}, { force: true });
       }
     } catch (error) {
       console.error('Suspend failed', error);

@@ -91,11 +91,14 @@ export default function CreateInternalTicket() {
 
   // Fetch client users when client selection changes
   useEffect(() => {
+    setSelectedClientUser('');
     if (selectedClient) {
       api.get(`/client-users?clientId=${selectedClient}&role=clientuser&limit=1000`)
         .then(res => {
           if (res.data.success) {
-            setClientUsers(res.data.users || []);
+            const rawUsers = res.data.users || [];
+            const clientOnly = rawUsers.filter(u => u.role === 'clientuser' || (!u.role && u.role !== 'consultant' && u.role !== 'superadmin'));
+            setClientUsers(clientOnly);
           }
         })
         .catch(err => {
@@ -104,7 +107,6 @@ export default function CreateInternalTicket() {
         });
     } else {
       setClientUsers([]);
-      setSelectedClientUser('');
       setIsVisibleToClient(false);
     }
   }, [selectedClient]);
@@ -538,7 +540,9 @@ export default function CreateInternalTicket() {
                 disabled={!selectedClient}
               >
                 <option value="">-- None --</option>
-                {clientUsers.map(u => {
+                {clientUsers
+                  .filter(u => u.role === 'clientuser' || (!u.role && u.role !== 'consultant' && u.role !== 'superadmin'))
+                  .map(u => {
                   let displayName = u.name || u.contactPerson || '';
                   if (!displayName || displayName === u.email || (displayName.includes('@') && displayName.includes('.'))) {
                     if (u.email && u.email.includes('@')) {

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Ticket, Clock, CheckCircle, AlertCircle, Building2, Paperclip, XCircle, Star, Award, TrendingUp } from 'lucide-react';
+import { Ticket, Clock, CheckCircle, AlertCircle, Building2, Paperclip, XCircle, Star, Award, TrendingUp, Layers } from 'lucide-react';
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -202,16 +202,16 @@ export default function Dashboard() {
         <StatCard 
           title="Total Tickets" 
           value={dashboardTickets.length} 
-          icon={<Ticket size={24} />} 
-          color="blue" 
+          icon={<Layers size={24} />} 
+          color="purple" 
           delay={0.1}
           onClick={() => navigate('/my-tickets?status=all')}
         />
         <StatCard 
           title="Open" 
           value={openTickets} 
-          icon={<AlertCircle size={24} />} 
-          color="red" 
+          icon={<Ticket size={24} />} 
+          color="blue" 
           delay={0.15}
           onClick={() => navigate('/my-tickets?status=open')}
         />
@@ -235,7 +235,7 @@ export default function Dashboard() {
           title="Resolved" 
           value={resolvedTickets} 
           icon={<CheckCircle size={24} />} 
-          color="green" 
+          color="emerald" 
           delay={0.3}
           onClick={() => navigate('/my-tickets?status=resolved')}
         />

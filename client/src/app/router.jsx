@@ -19,6 +19,7 @@ const AttendanceDashboard  = lazy(() => import('../features/user/AttendanceDashb
 const ConsultantDashboard       = lazy(() => import('../features/consultant/ConsultantDashboard'));
 const ConsultantKanbanBoard     = lazy(() => import('../features/consultant/ConsultantKanbanBoard'));
 const CreateInternalTicket      = lazy(() => import('../features/consultant/CreateInternalTicket'));
+const ConsultantReports         = lazy(() => import('../features/consultant/ConsultantReports'));
 
 const SuperAdminDashboard     = lazy(() => import('../features/superadmin/SuperAdminDashboard'));
 const SolutionsDirectory      = lazy(() => import('../features/superadmin/SolutionsDirectory'));
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
       { path: 'consultant',         element: <Suspense fallback={<PageLoader />}><ConsultantDashboard /></Suspense> },
       { path: 'consultant/tickets', element: <Suspense fallback={<PageLoader />}><ConsultantKanbanBoard /></Suspense> },
       { path: 'consultant/solutions', element: <Suspense fallback={<PageLoader />}><SolutionsDirectory /></Suspense> },
+      { path: 'consultant/reports',   element: <Suspense fallback={<PageLoader />}><ConsultantReports /></Suspense> },
 
       // ── Super Admin routes ────────────────────────────────────────────────
       { path: 'super-admin/tickets',             element: <Suspense fallback={<PageLoader />}><SuperAdminTickets /></Suspense> },

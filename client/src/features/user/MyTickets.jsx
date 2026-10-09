@@ -5,6 +5,7 @@ import { FileText, Filter, List, Grid, Search, ChevronRight, Paperclip, Star, Cl
 import { useTicketStore } from '../../store/useTicketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
+import TicketStatusBadge from '../../components/ui/TicketStatusBadge';
 import { getStatusBadgeClass, getStatusColor, getPriorityBadgeClass, getPriorityColor, getTicketEffectiveDate } from '../../utils/ticketHelpers';
 import { formatDateTime } from '../../utils/formatters';
 
@@ -192,9 +193,7 @@ export default function MyTickets() {
                   <div className="p-6 flex-1 relative z-10 pl-7">
                     <div className="flex justify-between items-start mb-5">
                       <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 tracking-wider">{ticket.ticketNumber || ticket.id}</span>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${getStatusBadgeClass(ticket.status)} uppercase tracking-wider`}>
-                        {ticket.status}
-                      </span>
+                      <TicketStatusBadge status={ticket.status} size="md" />
                     </div>
                     <h3 className="text-lg font-bold text-white mb-2 leading-tight group-hover:text-blue-400 transition-colors flex items-center gap-2">
                       {ticket.title}
@@ -283,9 +282,7 @@ export default function MyTickets() {
                         <Star size={10} className="fill-yellow-400/50" /> Rate
                       </div>
                     ) : null}
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${getStatusBadgeClass(ticket.status)} uppercase tracking-wider inline-block`}>
-                      {ticket.status}
-                    </span>
+                    <TicketStatusBadge status={ticket.status} size="md" />
                     <button className="w-8 h-8 rounded-full bg-white/5 hover:bg-primary text-muted-foreground hover:text-white flex items-center justify-center transition-all ml-4 shrink-0 group-hover:translate-x-1 duration-300">
                       <ChevronRight size={18} />
                     </button>

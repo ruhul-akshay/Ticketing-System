@@ -9,6 +9,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useConsultantStore } from '../../store/useConsultantStore';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { resolveConsultantInfo } from '../../features/consultant/detail/TicketWorkLogsSection';
+import TicketStatusBadge from './TicketStatusBadge';
 import * as XLSX from 'xlsx';
 
 const formatHoursToHM = (hoursVal) => {
@@ -125,15 +126,6 @@ const renderExcelTable = (excelData) => {
   );
 };
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'Open': return 'bg-red-500/20 text-red-500 border-red-500/30';
-    case 'Resolved': return 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30';
-    case 'On Hold': return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
-    case 'Cancelled': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-  }
-};
 
 const getPriorityColor = (priority) => {
   switch (priority) {
@@ -629,9 +621,7 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
             <div>
               <div className="flex items-center gap-3 mb-2.5">
                 <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">{ticket.ticketNumber || ticket.id}</span>
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(ticket.status)} uppercase tracking-wider`}>
-                  {ticket.status}
-                </span>
+                <TicketStatusBadge status={ticket.status} size="md" />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-tight pr-8">{ticket.title}</h2>
             </div>
@@ -1557,10 +1547,10 @@ ${(ticket.assignmentHistory || []).map((history, idx) => {
                             onChange={(e) => setStatusInput(e.target.value)}
                             className="bg-slate-50 dark:bg-[#181f2b] border border-slate-200 dark:border-white/5 rounded-xl px-3.5 py-2.5 text-slate-800 dark:text-white text-[12px] font-bold focus:outline-none focus:border-blue-500/50 shadow-inner cursor-pointer w-full"
                           >
-                            <option value="Open">Open Protocol</option>
+                            <option value="Open">Open</option>
                             <option value="On Hold">On Hold</option>
                             <option value="Cancelled">Cancelled</option>
-                            <option value="Resolved">Resolution Complete</option>
+                            <option value="Resolved">Resolved</option>
                           </select>
                         </div>
                         

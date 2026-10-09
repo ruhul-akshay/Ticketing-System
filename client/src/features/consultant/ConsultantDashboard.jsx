@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ClipboardList, Clock, CheckCircle, Building2, User,
   Briefcase, TrendingUp, AlertCircle, Download, Star, Paperclip, XCircle,
-  Eye, Search, ChevronDown, ChevronUp
+  Eye, Search, ChevronDown, ChevronUp, Ticket, Layers
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { useSystemSettingStore } from '../../store/useSystemSettingStore';
 import TicketViewerModal from '../../components/ui/TicketViewerModal';
+import TicketStatusBadge from '../../components/ui/TicketStatusBadge';
 import StatCard from '../../components/ui/StatCard';
 import { formatHoursToHM, formatDateOnly, formatDateTime } from '../../utils/formatters';
 import * as XLSX from 'xlsx';
@@ -582,8 +583,8 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
             title="Total Assigned"
             value={localStats.tickets.total}
             sub="All assigned tickets"
-            icon={<ClipboardList size={22} />}
-            color="blue"
+            icon={<Layers size={22} />}
+            color="purple"
             delay={0.1}
             onClick={() => navigate('/consultant/tickets?status=all')}
           />
@@ -591,8 +592,8 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
             title="Open Tickets"
             value={localStats.tickets.open}
             sub="Awaiting resolution"
-            icon={<AlertCircle size={22} />}
-            color="red"
+            icon={<Ticket size={22} />}
+            color="blue"
             delay={0.12}
             onClick={() => navigate('/consultant/tickets?status=open')}
           />
@@ -619,7 +620,7 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
             value={localStats.tickets.resolved}
             sub="Closed and completed"
             icon={<CheckCircle size={22} />}
-            color="green"
+            color="emerald"
             delay={0.18}
             onClick={() => navigate('/consultant/tickets?status=resolved')}
           />
@@ -978,14 +979,7 @@ Date:       ${r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : 'â€
                               <span className="text-[11px] font-black text-yellow-400 tracking-wider">
                                 {item.ticketNumber}
                               </span>
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black border uppercase tracking-wider ${
-                                item.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                item.status === 'On Hold' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                                item.status === 'Cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
-                                'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              }`}>
-                                {item.status}
-                              </span>
+                              <TicketStatusBadge status={item.status} size="sm" />
                               {item.clientName && (
                                 <span className="text-[11px] text-slate-400 font-bold truncate max-w-[150px]">
                                   â€¢ {item.clientName}

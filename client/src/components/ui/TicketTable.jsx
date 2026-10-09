@@ -13,12 +13,12 @@ import {
 } from 'lucide-react';
 import {
   getPriorityBadgeClass,
-  getStatusBadgeClass,
   isUnopened
 } from '../../utils/ticketHelpers';
 import { formatDateTime, formatDateOnly } from '../../utils/formatters';
 import EmptyState from './EmptyState';
 import LoadingSpinner from './LoadingSpinner';
+import TicketStatusBadge from './TicketStatusBadge';
 
 export default function TicketTable({
   tickets = [],
@@ -139,13 +139,7 @@ export default function TicketTable({
 
                   {/* Status */}
                   <td className="py-4 px-5">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${getStatusBadgeClass(
-                        ticket.status
-                      )}`}
-                    >
-                      {ticket.status || 'Open'}
-                    </span>
+                    <TicketStatusBadge status={ticket.status} size="md" />
                   </td>
 
                   {/* Assignee */}
@@ -232,13 +226,7 @@ export default function TicketTable({
                   >
                     {ticket.priority}
                   </span>
-                  <span
-                    className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${getStatusBadgeClass(
-                      ticket.status
-                    )}`}
-                  >
-                    {ticket.status}
-                  </span>
+                  <TicketStatusBadge status={ticket.status} size="sm" />
                 </div>
               </div>
 

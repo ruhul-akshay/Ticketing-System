@@ -18,3 +18,8 @@ export const getConsultantStats = asyncHandler(async (req, res) => {
   const stats = await consultantStatsService.getSpecificConsultantStats(req.params.consultantId, { startDate, endDate });
   res.json({ success: true, data: stats });
 });
+
+export const getConsultantReports = asyncHandler(async (req, res) => {
+  const result = await consultantStatsService.getConsultantReportsData(req.user, req.query);
+  res.json({ success: true, data: result });
+});

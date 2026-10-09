@@ -115,7 +115,9 @@ export const useTicketStore = create((set, get) => ({
     } catch (error) {
       console.error('Failed to create ticket', error);
       set({ error: error.message, isLoading: false });
-      return false;
+      // Re-throw so callers (e.g. CreateInternalTicket handleSubmit) can
+      // surface the server-provided error message to the user.
+      throw error;
     }
   },
   

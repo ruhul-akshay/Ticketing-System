@@ -82,6 +82,8 @@ export const getStatusColor = (status) => {
     case 'hold':
       return 'yellow';
     case 'open':
+    case 'assigned':
+      return 'blue';
     case 'suspended':
       return 'red';
     case 'cancelled':

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ClipboardList, AlertCircle, Download, X } from 'lucide-react';
-import { getStatusBadgeClass, getPriorityBadgeClass } from '../../../utils/ticketHelpers';
+import { getPriorityBadgeClass } from '../../../utils/ticketHelpers';
+import TicketStatusBadge from '../../../components/ui/TicketStatusBadge';
 
 export default function TicketDetailHeader({
   ticket,
@@ -24,13 +25,7 @@ export default function TicketDetailHeader({
             <span className="px-2 py-0.5 bg-slate-200/80 dark:bg-white/10 border border-slate-300/60 dark:border-white/10 rounded-md text-[9px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
               #{ticket.ticketNumber || String(ticket.id).slice(-8).toUpperCase()}
             </span>
-            <span
-              className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${getStatusBadgeClass(
-                status
-              )}`}
-            >
-              {status}
-            </span>
+            <TicketStatusBadge status={status || ticket.status} size="sm" />
             <span
               className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1 ${getPriorityBadgeClass(
                 ticket.priority
